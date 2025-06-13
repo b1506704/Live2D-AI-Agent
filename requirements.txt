@@ -1,0 +1,10 @@
+gtts
+librosa
+pygame
+numpy
+flask
+# Use the official PyTorch CUDA 12.8 build
+# See: https://pytorch.org/get-started/locally/
+torch --index-url https://download.pytorch.org/whl/cu128
+transformers>=4.40.0
+safetensors
