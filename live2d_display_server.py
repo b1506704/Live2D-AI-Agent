@@ -125,13 +125,15 @@ def tts_api():
     text = data.get('text', '')
     pitch = float(data.get('pitch', 1.0))
     speed = float(data.get('speed', 1.0))
-    # Use a temp file for output
     tmp_audio_path = 'tmp/tmp_webui.mp3'
-    from pyutils.live2d_control import my_tts
-    my_tts(text, tmp_audio_path, pitch=pitch, speed=speed)
-    # Return the audio file as a response
-    from flask import send_file
-    return send_file(tmp_audio_path, mimetype='audio/mpeg')
+    try:
+        from pyutils.live2d_control import my_tts
+        my_tts(text, tmp_audio_path, pitch=pitch, speed=speed)
+        from flask import send_file
+        return send_file(tmp_audio_path, mimetype='audio/mpeg')
+    except Exception as e:
+        print(f"TTS error: {e}")
+        return jsonify({'error': 'TTS failed', 'details': str(e)}), 500
 
 # --- Simple Auth Decorator ---
 def login_required(f):

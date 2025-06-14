@@ -32,11 +32,111 @@
         background: #a855f7;
         border-radius: 3px;
       }
+      .neon-black {
+        color: #111 !important;
+        text-shadow:
+          0 0 4px #fff,
+          0 0 8px #fff,
+          0 0 12px #0ff,
+          0 0 16px #0ff,
+          0 0 20px #0ff;
+      }
+      .glass-panel {
+        background: rgba(255, 255, 255, 0.25);
+        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.18);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border-radius: 1.5rem;
+        border: 1.5px solid rgba(255, 255, 255, 0.25);
+      }
+      /* Custom range slider styles for black track and dark thumb */
+      .glass-panel input[type=range] {
+        -webkit-appearance: none;
+        width: 100%;
+        height: 6px;
+        background: #111;
+        border-radius: 4px;
+        outline: none;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+        transition: background 0.3s;
+      }
+      .glass-panel input[type=range]:focus {
+        background: #222;
+      }
+      .glass-panel input[type=range]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #222;
+        border: 2px solid #000;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.18);
+        cursor: pointer;
+        transition: background 0.3s, border 0.3s;
+      }
+      .glass-panel input[type=range]:hover::-webkit-slider-thumb {
+        background: #333;
+        border-color: #111;
+      }
+      .glass-panel input[type=range]::-moz-range-thumb {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #222;
+        border: 2px solid #000;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.18);
+        cursor: pointer;
+        transition: background 0.3s, border 0.3s;
+      }
+      .glass-panel input[type=range]:hover::-moz-range-thumb {
+        background: #333;
+        border-color: #111;
+      }
+      .glass-panel input[type=range]::-ms-thumb {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #222;
+        border: 2px solid #000;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.18);
+        cursor: pointer;
+        transition: background 0.3s, border 0.3s;
+      }
+      .glass-panel input[type=range]:hover::-ms-thumb {
+        background: #333;
+        border-color: #111;
+      }
+      /* Remove default styles for Firefox */
+      .glass-panel input[type=range]::-moz-range-track {
+        background: #111;
+        height: 6px;
+        border-radius: 4px;
+      }
+      .glass-panel input[type=range]::-ms-fill-lower,
+      .glass-panel input[type=range]::-ms-fill-upper {
+        background: #111;
+        border-radius: 4px;
+      }
+      /* Hide outline on focus for all browsers */
+      .glass-panel input[type=range]:focus {
+        outline: none;
+      }
     </style>
-    <script type="module" crossorigin src="/assets/index-5691f43e.js"></script>
+    <script type="module" crossorigin src="/assets/index-506dec77.js"></script>
   </head>
   <body class="twitch-bg min-h-screen">
-    <div id="app"></div>
+    <div id="login-page" class="flex items-center justify-center min-h-screen bg-gradient-to-br from-fuchsia-900 to-blue-900">
+      <form id="login-form" class="bg-white/90 rounded-2xl shadow-2xl p-8 flex flex-col gap-4 w-80">
+        <div class="text-2xl font-bold text-fuchsia-700 mb-2 text-center">Live2D AI Agent Login</div>
+        <input type="text" id="login-username" placeholder="Username" class="p-2 rounded border border-gray-300" autocomplete="username" />
+        <input type="password" id="login-password" placeholder="Password" class="p-2 rounded border border-gray-300" autocomplete="current-password" />
+        <button type="submit" class="bg-fuchsia-600 hover:bg-fuchsia-700 text-white px-4 py-2 rounded transition">Login</button>
+        <div id="login-error" class="text-red-600 text-sm text-center hidden"></div>
+        <div class="text-xs text-gray-500 text-center">Demo account: demo / demo</div>
+      </form>
+    </div>
+    <div id="app" style="display:none;"></div>
     <!-- Error Modal -->
     <div id="error-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 hidden">
       <div class="bg-white rounded-2xl shadow-2xl border-4 border-fuchsia-500 max-w-md w-full p-6 flex flex-col items-center animate-pulse">
@@ -57,19 +157,44 @@
       </div>
       <!-- Right: Tabbed UI for Chat and Asset Management -->
       <div id="chat-ui" class="flex-1 bg-white/90 rounded-none shadow-lg p-6 flex flex-col gap-4 min-w-[320px] h-full max-h-full overflow-y-auto">
+        <!-- Tab menu with improved active/inactive/hover states -->
         <div class="mb-2">
-          <div class="flex border-b border-fuchsia-400">
-            <button id="tab-chat" class="tab-btn px-4 py-2 font-bold text-fuchsia-700 border-b-2 border-fuchsia-600 bg-white">Chat</button>
-            <button id="tab-assets" class="tab-btn px-4 py-2 font-bold text-gray-600 hover:text-fuchsia-700">Live2D Asset Management</button>
+          <div class="flex border-b border-fuchsia-400 bg-gradient-to-r from-fuchsia-100/60 to-blue-100/60 rounded-full p-1 shadow">
+            <button id="tab-chat" class="tab-btn tab-button active px-6 py-2 font-bold rounded-full transition-all duration-200 neon-black bg-fuchsia-600 shadow ring-2 ring-fuchsia-400/40 hover:bg-fuchsia-700 focus:outline-none focus:ring-4 focus:ring-fuchsia-300/60" data-tab="tab-panel-chat">Chat</button>
+            <button id="tab-chat-inactive" class="tab-btn tab-button px-6 py-2 font-bold rounded-full transition-all duration-200 neon-black bg-white border border-fuchsia-200 hover:bg-fuchsia-50 hover:text-fuchsia-800 focus:outline-none focus:ring-4 focus:ring-fuchsia-300/60 ml-2 hidden" data-tab="tab-panel-chat">Chat</button>
+            <button id="tab-assets" class="tab-btn tab-button px-6 py-2 font-bold rounded-full transition-all duration-200 neon-black bg-blue-600 shadow ring-2 ring-blue-400/40 hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-300/60 ml-2" data-tab="tab-panel-assets">Live2D Asset</button>
+            <button id="tab-assets-inactive" class="tab-btn tab-button px-6 py-2 font-bold rounded-full transition-all duration-200 neon-black bg-white border border-blue-200 hover:bg-blue-50 hover:text-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-300/60 ml-2 hidden" data-tab="tab-panel-assets">Live2D Asset</button>
           </div>
         </div>
-        <div id="tab-panel-chat">
+        <!-- Logout button below tab menu -->
+        <div class="flex justify-between items-center mb-2">
+          <div></div>
+          <button id="logout-btn" class="flex items-center gap-1 px-3 py-1 bg-gray-200 hover:bg-fuchsia-600 hover:text-white text-fuchsia-700 rounded-lg font-semibold transition">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h4a2 2 0 012 2v1" /></svg>
+            Logout
+          </button>
+        </div>
+        <div id="tab-panel-chat" class="tab-panel active">
+          <!-- Twitch-style overlay counters -->
+          <div class="flex gap-4 mb-2 items-center">
+            <div class="flex items-center gap-2 bg-fuchsia-700/90 text-white px-4 py-2 rounded-xl shadow-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-yellow-300 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87M17 8V7a5 5 0 00-10 0v1M12 17v.01" /></svg>
+              <span class="font-bold">Followers:</span>
+              <span id="follower-count" class="text-yellow-300 font-mono text-lg">0</span>
+            </div>
+            <div class="flex items-center gap-2 bg-purple-700/90 text-white px-4 py-2 rounded-xl shadow-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-pink-300 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 1.343-3 3 0 2.5 3 5 3 5s3-2.5 3-5c0-1.657-1.343-3-3-3z" /></svg>
+              <span class="font-bold">Subscribers:</span>
+              <span id="subscriber-count" class="text-pink-300 font-mono text-lg">0</span>
+            </div>
+            <div id="recent-event" class="ml-auto text-xs text-gray-700 italic"></div>
+          </div>
           <!-- Chat panel content -->
           <div id="chat-history" class="flex flex-col gap-2 max-h-96 overflow-y-scroll bg-gray-50 rounded p-2 scrollbar-thin scrollbar-thumb-fuchsia-400 scrollbar-track-gray-100">
             <!-- Agent info panel -->
             <div class="flex items-center gap-3 mb-4 p-2 bg-gradient-to-r from-fuchsia-700/80 to-blue-500/80 rounded-xl shadow">
               <div class="relative">
-                <img id="agent-avatar" src="/vite.svg" alt="Agent" class="w-16 h-16 rounded-full border-2 border-fuchsia-400 shadow" />
+                <img id="agent-avatar" src="/assets/haru/avatar.png" alt="Agent" class="w-16 h-16 rounded-full border-2 border-fuchsia-400 shadow" />
                 <div class="absolute -bottom-1 -right-1 bg-green-400 w-4 h-4 rounded-full border-2 border-white animate-pulse"></div>
               </div>
               <div class="flex-1">
@@ -103,21 +228,44 @@
             Live2D is responding...
             <span class="dot-anim">•</span><span class="dot-anim">•</span><span class="dot-anim">•</span>
           </div>
-          <div class="flex gap-2">
-            <input type="text" id="chat-input" placeholder="Type your question..." class="flex-1 p-2 rounded border border-gray-300" />
-            <button id="send-btn" class="bg-fuchsia-600 hover:bg-fuchsia-700 text-white px-4 py-2 rounded transition disabled:bg-fuchsia-300">Send</button>
+          <!-- Move Voice Pitch and Speed sliders into a glassmorphic sidebar panel -->
+          <div class="flex items-end gap-2 mt-2">
+            <div class="flex-1 flex flex-col gap-2">
+              <div class="flex items-center gap-2">
+                <textarea id="chat-input" placeholder="Type your message here..." class="flex-1 px-4 py-2 rounded-lg transition-all duration-200 ease-in-out"></textarea>
+                <button id="emoji-btn" type="button" class="px-2 py-2 rounded-lg bg-white hover:bg-fuchsia-100 text-fuchsia-700 text-xl shadow transition relative" title="Insert emoji">
+                  😊
+                </button>
+                <div id="emoji-picker" class="absolute z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-2 flex flex-wrap gap-1 hidden" style="top: -120px; right: 0; min-width: 180px;">
+                  <button class="emoji-item text-2xl p-1 hover:bg-fuchsia-100 rounded">😊</button>
+                  <button class="emoji-item text-2xl p-1 hover:bg-fuchsia-100 rounded">😃</button>
+                  <button class="emoji-item text-2xl p-1 hover:bg-fuchsia-100 rounded">😉</button>
+                  <button class="emoji-item text-2xl p-1 hover:bg-fuchsia-100 rounded">😛</button>
+                  <button class="emoji-item text-2xl p-1 hover:bg-fuchsia-100 rounded">😢</button>
+                  <button class="emoji-item text-2xl p-1 hover:bg-fuchsia-100 rounded">❤️</button>
+                  <button class="emoji-item text-2xl p-1 hover:bg-fuchsia-100 rounded">🎉</button>
+                  <button class="emoji-item text-2xl p-1 hover:bg-fuchsia-100 rounded">✨</button>
+                  <button class="emoji-item text-2xl p-1 hover:bg-fuchsia-100 rounded">⭐</button>
+                  <button class="emoji-item text-2xl p-1 hover:bg-fuchsia-100 rounded">💜</button>
+                </div>
+                <button id="send-btn" class="px-4 py-2 rounded-lg transition-all duration-200 ease-in-out bg-fuchsia-600 text-white font-bold border border-fuchsia-700 shadow hover:bg-fuchsia-700 focus:outline-none focus:ring-2 focus:ring-fuchsia-300">Send</button>
+              </div>
+            </div>
+            <div class="glass-panel flex flex-col gap-4 p-4 rounded-2xl shadow-lg border border-white/20 backdrop-blur-md bg-white/30 min-w-[180px] max-w-[220px]">
+              <div class="flex flex-col gap-1">
+                <label for="pitch-slider" class="text-gray-700 text-sm font-semibold">Voice Pitch</label>
+                <input type="range" id="pitch-slider" min="0.5" max="2" step="0.01" value="1" class="w-full accent-fuchsia-500">
+                <span id="pitch-value" class="text-gray-700 text-xs">1.00</span>
+              </div>
+              <div class="flex flex-col gap-1">
+                <label for="speed-slider" class="text-gray-700 text-sm font-semibold">Speed</label>
+                <input type="range" id="speed-slider" min="0.5" max="2" step="0.01" value="1" class="w-full accent-blue-500">
+                <span id="speed-value" class="text-gray-700 text-xs">1.00</span>
+              </div>
+            </div>
           </div>
-          <div class="flex gap-2 items-center">
-            <label for="pitch-slider" class="text-gray-700 text-sm">Voice Pitch</label>
-            <input type="range" id="pitch-slider" min="0.5" max="2" step="0.01" value="1" class="w-32">
-            <span id="pitch-value" class="text-gray-700 text-xs">1.00</span>
-            <label for="speed-slider" class="text-gray-700 text-sm ml-4">Speed</label>
-            <input type="range" id="speed-slider" min="0.5" max="2" step="0.01" value="1" class="w-32">
-            <span id="speed-value" class="text-gray-700 text-xs">1.00</span>
-          </div>
-          <div id="response-popup" class="hidden bg-yellow-50 border border-yellow-300 p-3 rounded text-yellow-800"></div>
         </div>
-        <div id="tab-panel-assets" class="hidden">
+        <div id="tab-panel-assets" class="tab-panel hidden">
           <div class="mb-4 text-lg font-bold text-fuchsia-700">Manage Live2D Assets</div>
           <div class="flex gap-2 mb-2">
             <input type="text" id="asset-path-input" placeholder="Model path (e.g. assets/haru/haru_greeter_t03.model3.json)" class="flex-1 p-2 rounded border border-gray-300" />
@@ -133,5 +281,39 @@
       </div>
     </div>
     
+    <script>
+      // Simple login logic
+      document.addEventListener('DOMContentLoaded', function() {
+        const loginPage = document.getElementById('login-page');
+        const appDiv = document.getElementById('app');
+        const loginForm = document.getElementById('login-form');
+        const loginError = document.getElementById('login-error');
+        // Check session
+        fetch('/api/assets/list').then(r => {
+          if (r.status === 200) {
+            loginPage.style.display = 'none';
+            appDiv.style.display = '';
+          }
+        });
+        loginForm.onsubmit = async function(e) {
+          e.preventDefault();
+          loginError.classList.add('hidden');
+          const username = document.getElementById('login-username').value;
+          const password = document.getElementById('login-password').value;
+          const res = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+          });
+          if (res.ok) {
+            loginPage.style.display = 'none';
+            appDiv.style.display = '';
+          } else {
+            loginError.textContent = 'Invalid username or password.';
+            loginError.classList.remove('hidden');
+          }
+        };
+      });
+    </script>
   </body>
 </html>
