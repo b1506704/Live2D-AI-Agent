@@ -1,103 +1,34 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-ENV/
-.venv
-pip-log.txt
-pip-delete-this-directory.txt
-.pytest_cache/
+# Logs
+logs
 *.log
-.coverage
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Node.js
-node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.pnpm-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Build outputs
-build/
-dist/
-*.egg-info/
-.eggs/
+.vscode
+.ipynb_checkpoints
+__pycache__
+node_modules
+dist-ssr
+*.local
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
 .DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
 
-# Models (large files)
-models/ai/*.gguf
-models/ai/*.bin
-models/ai/*.pt
-models/ai/*.pth
-models/ai/*.safetensors
-models/ai/whisper/
-models/ai/tts/
+mychatbot_demo.py
+tmp.mp3
+tmp.txt
+*_log.txt
 
-# Live2D models (except samples)
-models/live2d/*/
-!models/live2d/Haru/
-
-# Temporary files
-*.tmp
-*.temp
-*.cache
-tmp/
-temp/
-
-# SSL certificates
-nginx/ssl/
-
-# Docker
-.dockerignore
-
-# OS files
-Thumbs.db
-.Spotlight-V100
-.Trashes
-
-# Jupyter
-.ipynb_checkpoints/
-
-# Database
-*.db
-*.sqlite
-*.sqlite3
-
-# Redis
-dump.rdb
-
-# Logs
-logs/
-*.log
-
-# Testing
-htmlcov/
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
+models
