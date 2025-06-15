@@ -11,8 +11,10 @@ import MotionTab from './components/MotionTab';
 
 interface Message {
   sender: 'user' | 'assistant';
-  text: string;
+  text?: string;
   time: string; // ISO string
+  type?: string;
+  assets?: any[];
 }
 
 type ChatCommand = {
@@ -212,8 +214,25 @@ export function App() {
       });
       if (!res.ok) throw new Error('Chat API error');
       const data = await res.json();
-      setMessages(msgs => [...msgs, createMessage('assistant', data.response)]);
-      await playTTSWithThinking(data.response);
+
+      if (data.type === 'asset-list') {
+        setMessages(msgs => [
+          ...msgs,
+          {
+            sender: 'assistant',
+            type: 'asset-list',
+            assets: data.assets,
+            time: new Date().toISOString(),
+          }
+        ]);
+        await playTTSWithThinking('Here are your assets.');
+      } else {
+        setMessages(msgs => [
+          ...msgs,
+          createMessage('assistant', data.response)
+        ]);
+        await playTTSWithThinking(data.response || '');
+      }
       // Optionally refresh asset list if the command was asset-related
       if (
         input.toLowerCase().startsWith('list assets') ||
@@ -484,8 +503,10 @@ export function App() {
                 onSend={handleSendChat}
                 messages={messages.map(m => ({
                   sender: m.sender,
-                  text: escapeAndEmote(m.text),
+                  text: m.text || '',
                   time: m.time,
+                  type: m.type,
+                  assets: m.assets,
                 }))}
                 agentKey={agentKey}
               />

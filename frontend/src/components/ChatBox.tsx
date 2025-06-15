@@ -1,9 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
 
+interface AssetItem {
+  name: string;
+  url: string;
+  preview?: string | null;
+}
+
 interface Message {
   sender: string;
-  text: string;
+  text?: string;
   time: string;
+  type?: string;
+  assets?: AssetItem[];
 }
 
 interface ChatBoxProps {
@@ -75,6 +83,32 @@ const ChatBox: React.FC<ChatBoxProps> = ({ onSend, messages, agentKey = 'haru_gr
     }
   }, [showEmotes]);
 
+  // Helper to render asset-list beautifully
+  function renderAssetList(assets: AssetItem[]) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-2">
+        {assets.map(asset => (
+          <div key={asset.name} className="bg-white rounded-xl shadow p-4 flex flex-col items-center border border-fuchsia-100">
+            {asset.preview && asset.preview.match(/\.(png|jpg|jpeg|gif|webp)$/i) && (
+              <img src={asset.preview} alt={asset.name} className="w-32 h-32 object-contain mb-2 rounded-lg border" />
+            )}
+            {asset.preview && asset.preview.match(/\.(mp3|wav|ogg)$/i) && (
+              <audio controls src={asset.preview} className="w-full mb-2" />
+            )}
+            <div className="font-semibold text-fuchsia-700 truncate w-full text-center" title={asset.name}>{asset.name}</div>
+            <a
+              href={asset.url}
+              download
+              className="mt-2 px-3 py-1 rounded bg-fuchsia-600 text-white hover:bg-fuchsia-700 transition text-sm font-bold shadow"
+            >
+              Download
+            </a>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-auto p-4">
@@ -92,7 +126,12 @@ const ChatBox: React.FC<ChatBoxProps> = ({ onSend, messages, agentKey = 'haru_gr
                   <div
                     className={`p-2 rounded-lg ${isUser ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-900'}`}
                   >
-                    {msg.text}
+                    {/* Render asset-list beautifully if present */}
+                    {msg.type === 'asset-list' && msg.assets ? (
+                      renderAssetList(msg.assets)
+                    ) : (
+                      msg.text
+                    )}
                   </div>
                   <div className="text-xs text-gray-500 text-right mt-1">{formatTime(new Date(msg.time))}</div>
                 </div>

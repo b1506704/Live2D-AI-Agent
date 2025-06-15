@@ -70,9 +70,10 @@ def classify_intent(prompt, model_name):
     system_prompt = (
         "You are an intent classifier for an AI agent. "
         "Given a user message, reply ONLY with a JSON object: "
-        '{"intent": "list-assets"|"delete-asset"|"rename-asset"|"download-asset"|"normal-chat", "args": {...}}. '
-        "If the user wants to list, delete, rename, or download assets, set the intent accordingly. "
+        '{"intent": "list-assets"|"search-assets"|"delete-asset"|"rename-asset"|"download-asset"|"normal-chat", "args": {...}}. '
+        "If the user wants to list, search, delete, rename, or download assets, set the intent accordingly. "
         "Otherwise, set intent to 'normal-chat'. "
+        "For search, extract the search query as args.query, file type as args.type, extension as args.ext, min size in MB as args.min_size_mb, and date as args.date if mentioned. "
         "For delete, rename, or download, extract the asset path(s) as args. "
         "For rename, provide both old and new path in args. "
         "If you are unsure, default to 'normal-chat'.\n"
@@ -81,10 +82,22 @@ def classify_intent(prompt, model_name):
         'Reply: {"intent": "list-assets", "args": {}}\n'
         "User: 'List all uploaded files.'\n"
         'Reply: {"intent": "list-assets", "args": {}}\n'
-        "User: 'What files do I have?'\n"
-        'Reply: {"intent": "list-assets", "args": {}}\n'
-        "User: 'Show me everything I uploaded.'\n"
-        'Reply: {"intent": "list-assets", "args": {}}\n'
+        "User: 'Find all files with report in the name.'\n"
+        'Reply: {"intent": "search-assets", "args": {"query": "report"}}\n'
+        "User: 'Search for images.'\n"
+        'Reply: {"intent": "search-assets", "args": {"query": "images"}}\n'
+        "User: 'Look for anything called data.'\n"
+        'Reply: {"intent": "search-assets", "args": {"query": "data"}}\n'
+        "User: 'Show me all images.'\n"
+        'Reply: {"intent": "search-assets", "args": {"type": "image"}}\n'
+        "User: 'Find all audio files.'\n"
+        'Reply: {"intent": "search-assets", "args": {"type": "audio"}}\n'
+        "User: 'List all .pdf files.'\n"
+        'Reply: {"intent": "search-assets", "args": {"ext": "pdf"}}\n'
+        "User: 'Show me files larger than 1MB.'\n"
+        'Reply: {"intent": "search-assets", "args": {"min_size_mb": 1}}\n'
+        "User: 'Find files from last week.'\n"
+        'Reply: {"intent": "search-assets", "args": {"date": "last week"}}\n'
         "User: 'Remove the file called test.txt'\n"
         'Reply: {"intent": "delete-asset", "args": {"path": "test.txt"}}\n'
         "User: 'Delete foo.png'\n"
@@ -118,6 +131,17 @@ def classify_intent(prompt, model_name):
     response = re.sub(r'</?think>', '', response, flags=re.IGNORECASE)
     return response.strip()
 
+# Preload the default model at startup (only in main process, not reloader)
+if __name__ == "__main__" or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+    try:
+        print("Preloading chat model...")
+        get_chat_model('Qwen3-1.7B')
+        print("Model loaded successfully.")
+    except Exception as e:
+        import traceback
+        print("Model preload failed:")
+        print(traceback.format_exc())
+
 @app.route('/api/chat', methods=['POST'])
 def chat():
     try:
@@ -138,8 +162,20 @@ def chat():
         # Step 2: Route based on intent
         if intent == "list-assets":
             assets = asset_controller.list_assets()
-            response = "Here are the available assets:\n" + "\n".join(assets)
-            return jsonify({'response': response})
+            asset_objs = []
+            for asset in assets:
+                ext = os.path.splitext(asset)[1].lower()
+                preview = None
+                if ext in [".png", ".jpg", ".jpeg", ".gif", ".webp"]:
+                    preview = f"/api/assets/preview?path={asset}"
+                elif ext in [".mp3", ".wav", ".ogg"]:
+                    preview = f"/api/assets/preview?path={asset}"
+                asset_objs.append({
+                    "name": asset,
+                    "url": f"/api/assets/download?path={asset}",
+                    "preview": preview
+                })
+            return jsonify({"type": "asset-list", "assets": asset_objs})
         elif intent == "delete-asset":
             path = args.get('path')
             if path and asset_controller.delete_asset(path):
@@ -158,6 +194,47 @@ def chat():
                 url = f"/api/assets/download?path={path}"
                 return jsonify({'response': f"Click [here]({url}) to download asset: {path}"})
             return jsonify({'response': 'No asset path provided for download.'})
+        elif intent == "search-assets":
+            query = args.get('query', '').lower()
+            file_type = args.get('type')
+            ext_filter = args.get('ext')
+            min_size_mb = args.get('min_size_mb')
+            date_filter = args.get('date')
+            all_assets = asset_controller.list_assets()
+            filtered = []
+            for asset in all_assets:
+                ext = os.path.splitext(asset)[1].lower().lstrip('.')
+                match = True
+                if query and query not in asset.lower():
+                    match = False
+                if file_type:
+                    if file_type == 'image' and ext not in ['png', 'jpg', 'jpeg', 'gif', 'webp']:
+                        match = False
+                    if file_type == 'audio' and ext not in ['mp3', 'wav', 'ogg']:
+                        match = False
+                if ext_filter and ext != ext_filter.lower():
+                    match = False
+                if min_size_mb:
+                    path = os.path.join(STORAGE_PATH, asset)
+                    if os.path.exists(path) and os.path.getsize(path) < float(min_size_mb) * 1024 * 1024:
+                        match = False
+                # (Optional) Add date filtering logic here if you want
+                if match:
+                    filtered.append(asset)
+            asset_objs = []
+            for asset in filtered:
+                ext = os.path.splitext(asset)[1].lower()
+                preview = None
+                if ext in [".png", ".jpg", ".jpeg", ".gif", ".webp"]:
+                    preview = f"/api/assets/preview?path={asset}"
+                elif ext in [".mp3", ".wav", ".ogg"]:
+                    preview = f"/api/assets/preview?path={asset}"
+                asset_objs.append({
+                    "name": asset,
+                    "url": f"/api/assets/download?path={asset}",
+                    "preview": preview
+                })
+            return jsonify({"type": "asset-list", "assets": asset_objs})
         else:
             # Normal chat
             model_info = CHAT_MODELS.get(model_name)
@@ -364,4 +441,4 @@ def preview_asset():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=False, port=5000)
