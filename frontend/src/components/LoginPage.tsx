@@ -1,11 +1,16 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 
-function LoginPage({ onLogin, error }) {
+interface LoginPageProps {
+  onLogin: (username: string, password: string) => Promise<void>;
+  error?: string;
+}
+
+const LoginPage: React.FC<LoginPageProps> = ({ onLogin, error }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     await onLogin(username, password);
@@ -24,6 +29,6 @@ function LoginPage({ onLogin, error }) {
       </form>
     </div>
   );
-}
+};
 
 export default LoginPage;

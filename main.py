@@ -1,10 +1,12 @@
 import logging
-from flask import Flask, send_from_directory, request, jsonify, session
+from flask import Flask, send_from_directory, request, jsonify, session, send_file
 import os
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from functools import wraps
 from pyutils.user_settings import get_user_settings, save_user_settings
 import re
+import zipfile
+import io
 
 app = Flask(__name__, static_folder='dist')
 app.secret_key = 'dev_secret_key'  # For session
@@ -105,7 +107,6 @@ def tts_api():
     try:
         from pyutils.text_to_speech import generate_voice
         audio_fp = generate_voice(text, pitch=pitch, speed=speed, voice=voice, gender=gender, mood=mood)
-        from flask import send_file
         return send_file(audio_fp, mimetype='audio/mpeg', as_attachment=False, download_name='tts.mp3')
     except Exception as e:
         print(f"TTS error: {e}")
@@ -231,6 +232,25 @@ def preview_asset():
         return jsonify({'type': 'text', 'content': content})
     else:
         return jsonify({'type': 'unknown', 'message': 'Preview not supported for this file type.'})
+
+@app.route('/api/assets/download-zip', methods=['POST'])
+@login_required
+def download_assets_zip():
+    data = request.json
+    paths = data.get('paths', [])
+    if not isinstance(paths, list) or not paths:
+        return 'No files specified', 400
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w') as zipf:
+        for rel_path in paths:
+            if '..' in rel_path:
+                continue
+            abs_path = os.path.join(STORAGE_DIR, rel_path)
+            if os.path.exists(abs_path):
+                zipf.write(abs_path, arcname=rel_path)
+    zip_buffer.seek(0)
+    return send_file(zip_buffer, mimetype='application/zip', as_attachment=True, download_name='assets.zip')
 
 if __name__ == '__main__':
     app.run(port=5000, host="0.0.0.0")

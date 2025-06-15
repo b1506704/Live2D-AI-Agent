@@ -1,15 +1,21 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { FaVolumeUp, FaSlidersH, FaUser, FaSmile, FaCheckCircle } from 'react-icons/fa';
 
-function OptionsTab({
-  pitch, speed, voice, gender, mood,
-  onSave
-}) {
-  const [localPitch, setLocalPitch] = useState(pitch);
-  const [localSpeed, setLocalSpeed] = useState(speed);
-  const [localVoice, setLocalVoice] = useState(voice);
-  const [localGender, setLocalGender] = useState(gender);
-  const [localMood, setLocalMood] = useState(mood);
+interface OptionsTabProps {
+  pitch: number;
+  speed: number;
+  voice: string;
+  gender: string;
+  mood: string;
+  onSave: (opts: { pitch: number; speed: number; voice: string; gender: string; mood: string }) => void;
+}
+
+const OptionsTab: React.FC<OptionsTabProps> = ({ pitch, speed, voice, gender, mood, onSave }) => {
+  const [localPitch, setLocalPitch] = useState<number>(pitch);
+  const [localSpeed, setLocalSpeed] = useState<number>(speed);
+  const [localVoice, setLocalVoice] = useState<string>(voice);
+  const [localGender, setLocalGender] = useState<string>(gender);
+  const [localMood, setLocalMood] = useState<string>(mood);
   const [showSaved, setShowSaved] = useState(false);
   const voices = [
     { value: '', label: 'Default' },
@@ -63,31 +69,17 @@ function OptionsTab({
         <select value={localMood} onChange={e=>setLocalMood(e.target.value)} className="rounded border p-2 focus:ring-2 focus:ring-fuchsia-400">
           {moods.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
         </select>
-        <label className="font-semibold text-fuchsia-700 mt-4">Pitch: <span className="font-normal text-gray-700">{localPitch}</span></label>
-        <input type="range" min="0.5" max="2" step="0.01" value={localPitch} onChange={e=>setLocalPitch(Number(e.target.value))} className="w-full accent-fuchsia-600" />
-        <label className="font-semibold text-fuchsia-700 mt-4">Speed: <span className="font-normal text-gray-700">{localSpeed}</span></label>
-        <input type="range" min="0.5" max="2" step="0.01" value={localSpeed} onChange={e=>setLocalSpeed(Number(e.target.value))} className="w-full accent-fuchsia-600" />
-        <button
-          onClick={handleSave}
-          className="mt-6 bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-bold py-2 px-6 rounded-full shadow-lg transition-all text-lg flex items-center justify-center gap-2"
-        >
-          <FaCheckCircle className="text-white text-xl" /> Save
+        <label className="font-semibold text-fuchsia-700 mt-4">Pitch</label>
+        <input type="range" min="0.5" max="2" step="0.1" value={localPitch} onChange={e=>setLocalPitch(Number(e.target.value))} className="w-full" />
+        <label className="font-semibold text-fuchsia-700 mt-4">Speed</label>
+        <input type="range" min="0.5" max="2" step="0.1" value={localSpeed} onChange={e=>setLocalSpeed(Number(e.target.value))} className="w-full" />
+        <button onClick={handleSave} className="mt-4 bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-bold py-2 px-6 rounded-full shadow-lg transition-all text-lg flex items-center justify-center gap-2">
+          <FaCheckCircle className="mr-2" /> Save
         </button>
-        {showSaved && (
-          <div className="fixed inset-0 flex items-center justify-center z-50">
-            <div className="bg-white rounded-2xl shadow-2xl px-8 py-6 flex flex-col items-center animate-fade-in border-2 border-fuchsia-400">
-              <FaCheckCircle className="text-green-500 text-4xl mb-2 animate-bounce" />
-              <span className="text-lg font-semibold text-fuchsia-700">Settings saved!</span>
-            </div>
-          </div>
-        )}
+        {showSaved && <div className="text-green-600 text-sm mt-2 flex items-center gap-2"><FaCheckCircle /> Saved!</div>}
       </div>
-      <style>{`
-        @keyframes fade-in { from { opacity: 0; transform: translateY(10px);} to { opacity: 1; transform: none; } }
-        .animate-fade-in { animation: fade-in 0.5s; }
-      `}</style>
     </div>
   );
-}
+};
 
 export default OptionsTab;

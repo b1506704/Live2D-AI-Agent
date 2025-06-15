@@ -1,7 +1,17 @@
 import React, { useState } from 'react';
 
-function MotionTab({ motions, onPlay }) {
-  const [selected, setSelected] = useState(motions[0]?.name || '');
+interface Motion {
+  name: string;
+  displayName: string;
+}
+
+interface MotionTabProps {
+  motions: Motion[];
+  onPlay: (motionName: string) => void;
+}
+
+const MotionTab: React.FC<MotionTabProps> = ({ motions, onPlay }) => {
+  const [selected, setSelected] = useState<string>(motions[0]?.name || '');
   return (
     <div className="flex flex-col gap-6 p-4 max-w-lg mx-auto animate-fade-in">
       <div className="flex items-center gap-3 mb-2">
@@ -27,6 +37,6 @@ function MotionTab({ motions, onPlay }) {
       </div>
     </div>
   );
-}
+};
 
 export default MotionTab;

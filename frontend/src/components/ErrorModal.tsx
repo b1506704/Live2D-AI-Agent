@@ -1,4 +1,11 @@
-function ErrorModal({ message, onClose }) {
+import React from 'react';
+
+interface ErrorModalProps {
+  message: string;
+  onClose: () => void;
+}
+
+const ErrorModal: React.FC<ErrorModalProps> = ({ message, onClose }) => {
   if (!message) return null;
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -8,6 +15,6 @@ function ErrorModal({ message, onClose }) {
       </div>
     </div>
   );
-}
+};
 
 export default ErrorModal;

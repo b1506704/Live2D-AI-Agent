@@ -1,4 +1,13 @@
-function VoiceControls({ pitch, setPitch, speed, setSpeed }) {
+import React from 'react';
+
+interface VoiceControlsProps {
+  pitch: number;
+  setPitch: (value: number) => void;
+  speed: number;
+  setSpeed: (value: number) => void;
+}
+
+const VoiceControls: React.FC<VoiceControlsProps> = ({ pitch, setPitch, speed, setSpeed }) => {
   return (
     <div className="my-5">
       <div className="mb-3">
@@ -11,6 +20,6 @@ function VoiceControls({ pitch, setPitch, speed, setSpeed }) {
       </div>
     </div>
   );
-}
+};
 
 export default VoiceControls;
