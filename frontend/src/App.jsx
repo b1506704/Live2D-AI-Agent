@@ -1,0 +1,406 @@
+import { useState, useEffect, useRef } from 'react';
+import AssetManager from './components/AssetManager';
+import Live2DModelDisplay from './components/Live2DModelDisplay';
+import AgentInfo from './components/AgentInfo';
+import ChatBox from './components/ChatBox';
+import ErrorModal from './components/ErrorModal';
+import { escapeAndEmote } from './components/utils';
+import LoginPage from './components/LoginPage';
+import OptionsTab from './components/OptionsTab';
+import MotionTab from './components/MotionTab';
+
+const AGENT_INFO = {
+  'haru_greeter_t05': {
+    name: 'Haru',    
+    role: 'Friendly AI Assistant',
+    avatar: '/assets/haru_pro/avatar.png',
+  },
+};
+
+const AGENT_GREETINGS = {
+  'haru_greeter_t05': [
+    "Hi there! I'm Haru, your cheerful AI assistant! 😊",
+    "Hello! Haru here, ready to help and chat!",
+    "Hey! I'm Haru. How can I brighten your day?",
+    "Welcome! I'm Haru, your friendly AI buddy!",
+    "Yo! Haru at your service! What can I do for you today?"
+  ]
+};
+
+function getRandomGreeting(agentKey) {
+  const greetings = AGENT_GREETINGS[agentKey];
+  if (greetings && greetings.length > 0) {
+    return greetings[Math.floor(Math.random() * greetings.length)];
+  }
+  return "Hello! I'm your AI assistant.";
+}
+
+function App() {
+  const [modelPath, setModelPath] = useState('/assets/haru_pro/haru_greeter_t05.model3.json');
+  const [agentKey, setAgentKey] = useState('haru_greeter_t05');
+  const [messages, setMessages] = useState([]);
+  const [error, setError] = useState('');
+  const [pitch, setPitch] = useState(1.0);
+  const [speed, setSpeed] = useState(1.0);
+  const [activeTab, setActiveTab] = useState('chat');
+  const [authenticated, setAuthenticated] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [responding, setResponding] = useState(false);
+  const [voice, setVoice] = useState('');
+  const [gender, setGender] = useState('');
+  const [mood, setMood] = useState('');
+  const [motions] = useState([
+    { name: 'haru_g_idle', displayName: 'Idle' },
+    { name: 'haru_g_m01', displayName: 'Motion 01' },
+    { name: 'haru_g_m02', displayName: 'Motion 02' },
+    { name: 'haru_g_m03', displayName: 'Motion 03' },
+    { name: 'haru_g_m04', displayName: 'Motion 04' },
+    { name: 'haru_g_m05', displayName: 'Motion 05' },
+    { name: 'haru_g_m06', displayName: 'Motion 06' },
+    { name: 'haru_g_m07', displayName: 'Motion 07' },
+    { name: 'haru_g_m08', displayName: 'Motion 08' },
+    { name: 'haru_g_m09', displayName: 'Motion 09' },
+    { name: 'haru_g_m10', displayName: 'Motion 10' },
+    { name: 'haru_g_m11', displayName: 'Motion 11' },
+    { name: 'haru_g_m12', displayName: 'Motion 12' },
+    { name: 'haru_g_m13', displayName: 'Motion 13' },
+    { name: 'haru_g_m14', displayName: 'Motion 14' },
+    { name: 'haru_g_m15', displayName: 'Motion 15' },
+    { name: 'haru_g_m16', displayName: 'Motion 16' },
+    { name: 'haru_g_m17', displayName: 'Motion 17' },
+    { name: 'haru_g_m18', displayName: 'Motion 18' },
+    { name: 'haru_g_m19', displayName: 'Motion 19' },
+    { name: 'haru_g_m20', displayName: 'Motion 20' },
+    { name: 'haru_g_m21', displayName: 'Motion 21' },
+    { name: 'haru_g_m22', displayName: 'Motion 22' },
+    { name: 'haru_g_m23', displayName: 'Motion 23' },
+    { name: 'haru_g_m24', displayName: 'Motion 24' },
+    { name: 'haru_g_m25', displayName: 'Motion 25' },
+    { name: 'haru_g_m26', displayName: 'Motion 26' },
+  ]);
+  const live2dRef = useRef();
+
+  // Helper to play TTS and manage thinking indicator
+  const playTTSWithThinking = async (text) => {
+    setResponding(true);
+    if (live2dRef.current && live2dRef.current.playTTSAndAnimate) {
+      await live2dRef.current.playTTSAndAnimate(
+        text, pitch, speed, voice, gender, mood,
+        undefined, // onAudioStart: do nothing
+        () => setResponding(false) // onAudioEnd: hide thinking when audio ends
+      );
+    } else {
+      setResponding(false);
+    }
+  };
+
+  useEffect(() => {
+    // Show greeting on agent/model change
+    const greeting = getRandomGreeting(agentKey);
+    setMessages([{ role: 'assistant', content: greeting }]);
+    // Play greeting with TTS and animation
+    playTTSWithThinking(greeting);
+  }, [agentKey, modelPath]);
+
+  useEffect(() => {
+    // Check session on mount
+    fetch('/api/assets/list', { credentials: 'include' })
+      .then(r => setAuthenticated(r.status === 200));
+  }, []);
+
+  async function handleLogin(username, password) {
+    setLoginError('');
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+      credentials: 'include',
+    });
+    if (res.ok) {
+      setAuthenticated(true);
+    } else {
+      setLoginError('Invalid username or password.');
+    }
+  }
+
+  async function handleLogout() {
+    await fetch('/api/logout', { method: 'POST', credentials: 'include' });
+    setAuthenticated(false);
+  }
+
+  async function handleSendChat(input) {
+    // Parse for commands
+    const cmd = parseChatCommand(input);
+    if (cmd) {
+      if (cmd.type === 'switch-model') {
+        setModelPath(cmd.path);
+        setMessages(msgs => [...msgs, { role: 'user', content: input }, { role: 'assistant', content: `Switched to model: ${cmd.path}` }]);
+        return;
+      }
+      if (cmd.type === 'show-models') {
+        setMessages(msgs => [...msgs, { role: 'user', content: input }, { role: 'assistant', content: 'Available models:\n' + (Array.isArray(window.availableModels) ? window.availableModels.join('\n') : 'Use the Asset tab to see all models.') }]);
+        return;
+      }
+      if (cmd.type === 'delete-asset') {
+        setMessages(msgs => [...msgs, { role: 'user', content: input }, { role: 'assistant', content: `Requested deletion of asset: ${cmd.path}` }]);
+        return;
+      }
+      if (cmd.type === 'download-asset') {
+        window.open(`/api/assets/download?path=${encodeURIComponent(cmd.path)}`);
+        setMessages(msgs => [...msgs, { role: 'user', content: input }, { role: 'assistant', content: `Started download for asset: ${cmd.path}` }]);
+        return;
+      }
+      if (cmd.type === 'play-audio') {
+        const audio = new Audio(`/api/assets/preview?path=${encodeURIComponent(cmd.path)}`);
+        audio.play();
+        setMessages(msgs => [...msgs, { role: 'user', content: input }, { role: 'assistant', content: `Playing audio: ${cmd.path}` }]);
+        return;
+      }
+      if (cmd.type === 'read-aloud') {
+        if (live2dRef.current && live2dRef.current.playTTSAndAnimate) {
+          live2dRef.current.playTTSAndAnimate(cmd.text, pitch, speed);
+        }
+        setMessages(msgs => [...msgs, { role: 'user', content: input }, { role: 'assistant', content: `Reading aloud: ${cmd.text}` }]);
+        return;
+      }
+      if (cmd.type === 'reminder') {
+        setTimeout(() => {
+          setMessages(msgs => [...msgs, { role: 'assistant', content: `⏰ Reminder: ${cmd.task}` }]);
+        }, (cmd.unit.startsWith('hour') ? cmd.time * 60 : cmd.time) * 60000);
+        setMessages(msgs => [...msgs, { role: 'user', content: input }, { role: 'assistant', content: `Reminder set for ${cmd.time} ${cmd.unit}: ${cmd.task}` }]);
+        return;
+      }
+      if (cmd.type === 'change-expression') {
+        if (live2dRef.current && live2dRef.current.setExpression) {
+          live2dRef.current.setExpression(cmd.expression);
+        }
+        setMessages(msgs => [...msgs, { role: 'user', content: input }, { role: 'assistant', content: `Changed expression to: ${cmd.expression}` }]);
+        return;
+      }
+      if (cmd.type === 'animate') {
+        if (live2dRef.current && live2dRef.current.playMotion) {
+          live2dRef.current.playMotion(cmd.motion);
+        }
+        setMessages(msgs => [...msgs, { role: 'user', content: input }, { role: 'assistant', content: `Animating: ${cmd.motion}` }]);
+        return;
+      }
+      if (cmd.type === 'set-voice-pitch') {
+        setPitch(cmd.value);
+        setMessages(msgs => [...msgs, { role: 'user', content: input }, { role: 'assistant', content: `Voice pitch set to: ${cmd.value}` }]);
+        return;
+      }
+      if (cmd.type === 'set-voice-speed') {
+        setSpeed(cmd.value);
+        setMessages(msgs => [...msgs, { role: 'user', content: input }, { role: 'assistant', content: `Voice speed set to: ${cmd.value}` }]);
+        return;
+      }
+    }
+    setMessages(msgs => [...msgs, { role: 'user', content: input }]);
+    setResponding(true);
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: input, model: 'Qwen3-1.7B' }),
+      });
+      if (!res.ok) throw new Error('Chat API error');
+      const data = await res.json();
+      setMessages(msgs => [...msgs, { role: 'assistant', content: data.response }]);
+      // Play TTS and animate Live2D
+      await playTTSWithThinking(data.response);
+    } catch (e) {
+      setError(e.message);
+      setResponding(false);
+    }
+  }
+
+  function handleModelChange(e) {
+    const value = e.target.value;
+    setModelPath(value);
+    setAgentKey('haru_greeter_t05');
+  }
+
+  // Chat command parsing for model/asset control
+  function parseChatCommand(input) {
+    const lower = input.toLowerCase();
+    if (lower.startsWith('switch to ')) {
+      const match = input.match(/switch to (.+)/i);
+      if (match) return { type: 'switch-model', path: match[1].trim() };
+    }
+    if (lower.startsWith('load model ')) {
+      const match = input.match(/load model (.+)/i);
+      if (match) return { type: 'switch-model', path: match[1].trim() };
+    }
+    if (lower.startsWith('show all models')) {
+      return { type: 'show-models' };
+    }
+    if (lower.startsWith('delete asset ')) {
+      const match = input.match(/delete asset (.+)/i);
+      if (match) return { type: 'delete-asset', path: match[1].trim() };
+    }
+    if (lower.startsWith('download asset ')) {
+      const match = input.match(/download asset (.+)/i);
+      if (match) return { type: 'download-asset', path: match[1].trim() };
+    }
+    if (lower.startsWith('play audio ')) {
+      const match = input.match(/play audio (.+)/i);
+      if (match) return { type: 'play-audio', path: match[1].trim() };
+    }
+    if (lower.startsWith('read aloud ')) {
+      const match = input.match(/read aloud (.+)/i);
+      if (match) return { type: 'read-aloud', text: match[1].trim() };
+    }
+    if (lower.startsWith('remind me to ')) {
+      const match = input.match(/remind me to (.+) in (\d+) (minute|minutes|hour|hours)/i);
+      if (match) return { type: 'reminder', task: match[1].trim(), time: parseInt(match[2]), unit: match[3] };
+    }
+    if (lower.startsWith('change expression to ')) {
+      const match = input.match(/change expression to (.+)/i);
+      if (match) return { type: 'change-expression', expression: match[1].trim() };
+    }
+    if (lower.startsWith('animate ') || lower.startsWith('do animation ')) {
+      const match = input.match(/(?:animate|do animation) (.+)/i);
+      if (match) return { type: 'animate', motion: match[1].trim() };
+    }
+    if (lower.startsWith('set voice pitch to ')) {
+      const match = input.match(/set voice pitch to ([\d.]+)/i);
+      if (match) return { type: 'set-voice-pitch', value: parseFloat(match[1]) };
+    }
+    if (lower.startsWith('set voice speed to ')) {
+      const match = input.match(/set voice speed to ([\d.]+)/i);
+      if (match) return { type: 'set-voice-speed', value: parseFloat(match[1]) };
+    }
+    return null;
+  }
+
+  // Load TTS settings from backend on login or tab open
+  useEffect(() => {
+    if (authenticated && activeTab === 'options') {
+      fetch('/api/settings/tts', { credentials: 'include' })
+        .then(r => r.json())
+        .then(settings => {
+          if (settings.pitch !== undefined) setPitch(settings.pitch);
+          if (settings.speed !== undefined) setSpeed(settings.speed);
+          if (settings.voice !== undefined) setVoice(settings.voice);
+          if (settings.gender !== undefined) setGender(settings.gender);
+          if (settings.mood !== undefined) setMood(settings.mood);
+        });
+    }
+  }, [authenticated, activeTab]);
+
+  // Add save handler for Option tab
+  async function handleSaveTTSOptions(newSettings) {
+    // Save to backend
+    await fetch('/api/settings/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(newSettings)
+    });
+    // Update app state
+    setPitch(newSettings.pitch);
+    setSpeed(newSettings.speed);
+    setVoice(newSettings.voice);
+    setGender(newSettings.gender);
+    setMood(newSettings.mood);
+  }
+
+  // Animated thinking indicator
+  function ThinkingIndicator() {
+    return (
+      <div className="flex items-center gap-2 mt-2 animate-pulse text-fuchsia-600 font-semibold">
+        <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
+        <span>Agent is thinking...</span>
+      </div>
+    );
+  }
+
+  if (!authenticated) {
+    return <LoginPage onLogin={handleLogin} error={loginError} />;
+  }
+
+  return (
+    <div className="flex flex-col md:flex-row w-full h-screen min-h-0">
+      {/* Left: Live2D Model Canvas */}
+      <div className="flex-1 flex items-center justify-center bg-black h-80 md:h-full min-h-0">
+        <div className="w-full h-full flex items-center justify-center max-w-full max-h-full">
+          <Live2DModelDisplay ref={live2dRef} modelPath={modelPath} />
+        </div>
+      </div>
+      {/* Right: Tab menu, chat, and controls */}
+      <div className="flex-1 flex flex-col h-full bg-white/90 p-0 min-h-0">
+        {/* Tab menu */}
+        <div className="flex border-b border-fuchsia-400 bg-gradient-to-r from-fuchsia-100/60 to-blue-100/60 rounded-none p-2 shadow text-xs sm:text-base">
+          <button
+            className={`tab-btn tab-button px-3 sm:px-6 py-2 font-bold rounded-full transition-all duration-200 neon-black ${activeTab === 'chat' ? 'bg-fuchsia-600 shadow ring-2 ring-fuchsia-400/40 text-white' : 'bg-white border border-fuchsia-200 hover:bg-fuchsia-50 hover:text-fuchsia-800'}`}
+            onClick={() => setActiveTab('chat')}
+          >
+            Chat
+          </button>
+          <button
+            className={`tab-btn tab-button px-3 sm:px-6 py-2 font-bold rounded-full transition-all duration-200 neon-black ml-2 ${activeTab === 'assets' ? 'bg-blue-600 shadow ring-2 ring-blue-400/40 text-white' : 'bg-white border border-blue-200 hover:bg-blue-50 hover:text-blue-800'}`}
+            onClick={() => setActiveTab('assets')}
+          >
+            Asset
+          </button>
+          <button
+            className={`tab-btn tab-button px-3 sm:px-6 py-2 font-bold rounded-full transition-all duration-200 neon-black ml-2 ${activeTab === 'options' ? 'bg-green-600 shadow ring-2 ring-green-400/40 text-white' : 'bg-white border border-green-200 hover:bg-green-50 hover:text-green-800'}`}
+            onClick={() => setActiveTab('options')}
+          >
+            Option
+          </button>
+          <button
+            className={`tab-btn tab-button px-3 sm:px-6 py-2 font-bold rounded-full transition-all duration-200 neon-black ml-2 ${activeTab === 'motion' ? 'bg-blue-700 shadow ring-2 ring-blue-400/40 text-white' : 'bg-white border border-blue-200 hover:bg-blue-50 hover:text-blue-800'}`}
+            onClick={() => setActiveTab('motion')}
+          >
+            Motion
+          </button>
+          <button onClick={handleLogout} className="ml-auto flex items-center gap-1 px-2 sm:px-3 py-1 bg-gray-200 hover:bg-fuchsia-600 hover:text-white text-fuchsia-700 rounded-lg font-semibold transition text-xs sm:text-base">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h4a2 2 0 012 2v1" /></svg>
+            Logout
+          </button>
+        </div>
+        {/* Main content area for tab panels */}
+        <div className="flex-1 flex flex-col overflow-y-auto p-2 sm:p-6 min-h-0">
+          {/* Agent Info and Model Switch */}
+          <div className="mb-2">
+            <AgentInfo {...AGENT_INFO[agentKey]} />
+            <label className="block mt-2 font-semibold text-fuchsia-700">Switch Model: </label>
+            <select value={modelPath} onChange={handleModelChange} className="rounded border p-1 mt-1 focus:ring-2 focus:ring-fuchsia-400 w-full max-w-xs">
+              <option value="/assets/haru_pro/haru_greeter_t05.model3.json">Haru (Live2D v4)</option>
+            </select>
+          </div>
+          {/* Tab panels */}
+          {activeTab === 'chat' && (
+            <>
+              <ChatBox onSend={handleSendChat} messages={messages.map(m => ({...m, content: escapeAndEmote(m.content)}))} agentKey={agentKey} />
+              {responding && <ThinkingIndicator />}
+            </>
+          )}
+          {activeTab === 'assets' && (
+            <AssetManager onLoadModel={path => setModelPath(path)} />
+          )}
+          {activeTab === 'options' && (
+            <OptionsTab
+              pitch={pitch}
+              speed={speed}
+              voice={voice}
+              gender={gender}
+              mood={mood}
+              onSave={handleSaveTTSOptions}
+            />
+          )}
+          {activeTab === 'motion' && (
+            <MotionTab
+              motions={motions}
+              onPlay={motionName => live2dRef.current && live2dRef.current.playMotion && live2dRef.current.playMotion(motionName)}
+            />
+          )}
+          <ErrorModal message={error} onClose={()=>setError('')} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default App;

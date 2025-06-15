@@ -24,11 +24,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
-
-mychatbot_demo.py
-tmp.mp3
-tmp.txt
 *_log.txt
 
 models
+storage
