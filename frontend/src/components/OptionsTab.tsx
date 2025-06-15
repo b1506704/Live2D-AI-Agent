@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FaVolumeUp, FaSlidersH, FaUser, FaSmile, FaCheckCircle } from 'react-icons/fa';
+import { FaSlidersH, FaUser, FaSmile, FaCheckCircle } from 'react-icons/fa';
 
 interface OptionsTabProps {
   pitch: number;

@@ -4,7 +4,6 @@ import Live2DModelDisplay from './components/Live2DModelDisplay';
 import AgentInfo from './components/AgentInfo';
 import ChatBox from './components/ChatBox';
 import ErrorModal from './components/ErrorModal';
-import { escapeAndEmote } from './components/utils';
 import LoginPage from './components/LoginPage';
 import OptionsTab from './components/OptionsTab';
 import MotionTab from './components/MotionTab';
@@ -16,40 +15,6 @@ interface Message {
   type?: string;
   assets?: any[];
 }
-
-type ChatCommand = {
-  type: 'list-assets';
-  directory?: string;
-} | {
-  type: 'delete-asset' | 'download-asset' | 'preview-asset' | 'switch-model';
-  path: string;
-} | {
-  type: 'rename-asset';
-  oldPath: string;
-  newPath: string;
-} | {
-  type: 'show-models';
-} | {
-  type: 'play-audio';
-  path: string;
-} | {
-  type: 'read-aloud';
-  text: string;
-} | {
-  type: 'reminder';
-  task: string;
-  time: number;
-  unit: string;
-} | {
-  type: 'change-expression';
-  expression: string;
-} | {
-  type: 'animate';
-  motion: string;
-} | {
-  type: 'set-voice-pitch' | 'set-voice-speed';
-  value: number;
-};
 
 const AGENT_INFO = {
   'haru_greeter_t05': {
