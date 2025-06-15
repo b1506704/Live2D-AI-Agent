@@ -1,7 +1,7 @@
 import os
 import json
 
-SETTINGS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../storage/user_settings'))
+SETTINGS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../frontend/public/assets/user_settings'))
 os.makedirs(SETTINGS_DIR, exist_ok=True)
 
 def get_user_settings(username):

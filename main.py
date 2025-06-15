@@ -4,15 +4,22 @@ import os
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from functools import wraps
 from pyutils.user_settings import get_user_settings, save_user_settings
+from pyutils.asset_controller import AssetController
 import re
 import zipfile
 import io
+import torch
+import json
 
 app = Flask(__name__, static_folder='dist')
 app.secret_key = 'dev_secret_key'  # For session
 
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
+
+# Initialize asset controller for storage (user-uploaded assets)
+STORAGE_PATH = os.path.join(os.path.dirname(__file__), 'storage')
+asset_controller = AssetController(STORAGE_PATH)
 
 # --- Chat Model Management ---
 CHAT_MODELS = {
@@ -54,30 +61,124 @@ def get_chat_model(model_key):
     if model_key not in loaded_models:
         model_info = CHAT_MODELS[model_key]
         tokenizer = AutoTokenizer.from_pretrained(model_info["name"], cache_dir=model_info["dir"], trust_remote_code=True)
-        model = AutoModelForCausalLM.from_pretrained(model_info["name"], cache_dir=model_info["dir"], trust_remote_code=True).cuda()
-        loaded_models[model_key] = (tokenizer, model)
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model = AutoModelForCausalLM.from_pretrained(model_info["name"], cache_dir=model_info["dir"], trust_remote_code=True).to(device)
+        loaded_models[model_key] = (tokenizer, model, device)
     return loaded_models[model_key]
 
-@app.route('/api/chat', methods=['POST'])
-def chat():
-    data = request.json
-    prompt = data.get('prompt', '')
-    model_key = data.get('model', 'Qwen3-1.7B')
-    model_path = data.get('model_path', '')  # Optionally provided by frontend
-    tokenizer, model = get_chat_model(model_key)
-    # Use agent-specific system prompt
-    system_prompt = get_agent_prompt(model_path)
+def classify_intent(prompt, model_name):
+    system_prompt = (
+        "You are an intent classifier for an AI agent. "
+        "Given a user message, reply ONLY with a JSON object: "
+        '{"intent": "list-assets"|"delete-asset"|"rename-asset"|"download-asset"|"normal-chat", "args": {...}}. '
+        "If the user wants to list, delete, rename, or download assets, set the intent accordingly. "
+        "Otherwise, set intent to 'normal-chat'. "
+        "For delete, rename, or download, extract the asset path(s) as args. "
+        "For rename, provide both old and new path in args. "
+        "If you are unsure, default to 'normal-chat'.\n"
+        "Examples:\n"
+        "User: 'Can you show me my files?'\n"
+        'Reply: {"intent": "list-assets", "args": {}}\n'
+        "User: 'List all uploaded files.'\n"
+        'Reply: {"intent": "list-assets", "args": {}}\n'
+        "User: 'What files do I have?'\n"
+        'Reply: {"intent": "list-assets", "args": {}}\n'
+        "User: 'Show me everything I uploaded.'\n"
+        'Reply: {"intent": "list-assets", "args": {}}\n'
+        "User: 'Remove the file called test.txt'\n"
+        'Reply: {"intent": "delete-asset", "args": {"path": "test.txt"}}\n'
+        "User: 'Delete foo.png'\n"
+        'Reply: {"intent": "delete-asset", "args": {"path": "foo.png"}}\n'
+        "User: 'Erase the document report.pdf'\n"
+        'Reply: {"intent": "delete-asset", "args": {"path": "report.pdf"}}\n'
+        "User: 'I want to rename foo.txt to bar.txt'\n"
+        'Reply: {"intent": "rename-asset", "args": {"old_path": "foo.txt", "new_path": "bar.txt"}}\n'
+        "User: 'Change the name of old.doc to new.doc'\n"
+        'Reply: {"intent": "rename-asset", "args": {"old_path": "old.doc", "new_path": "new.doc"}}\n'
+        "User: 'Can you download the report.pdf?'\n"
+        'Reply: {"intent": "download-asset", "args": {"path": "report.pdf"}}\n'
+        "User: 'Get me the file data.csv'\n"
+        'Reply: {"intent": "download-asset", "args": {"path": "data.csv"}}\n'
+        "User: 'How are you today?'\n"
+        'Reply: {"intent": "normal-chat", "args": {}}\n'
+        "User: 'Tell me a joke.'\n"
+        'Reply: {"intent": "normal-chat", "args": {}}\n'
+        "User: 'Can you help me?'\n"
+        'Reply: {"intent": "normal-chat", "args": {}}\n'
+    )
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": prompt}
     ]
-    input_ids = tokenizer.apply_chat_template(messages, return_tensors="pt").cuda()
-    output = model.generate(input_ids, max_new_tokens=256, do_sample=True, temperature=0.7)
+    tokenizer, model, device = get_chat_model(model_name)
+    input_ids = tokenizer.apply_chat_template(messages, return_tensors="pt").to(device)
+    output = model.generate(input_ids, max_new_tokens=128, do_sample=False)
     response = tokenizer.decode(output[0][input_ids.shape[-1]:], skip_special_tokens=True)
-    # Remove <think>...</think> tags if present
-    response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL)
-    response = re.sub(r'</think>', '', response, flags=re.IGNORECASE)
-    return jsonify({"response": response.strip()})
+    response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL | re.IGNORECASE)
+    response = re.sub(r'</?think>', '', response, flags=re.IGNORECASE)
+    return response.strip()
+
+@app.route('/api/chat', methods=['POST'])
+def chat():
+    try:
+        data = request.json
+        prompt = data.get('prompt', '')
+        model_name = data.get('model', 'Qwen3-1.7B')
+
+        # Step 1: Classify intent
+        intent_json = classify_intent(prompt, model_name)
+        try:
+            intent_data = json.loads(intent_json)
+        except Exception:
+            intent_data = {"intent": "normal-chat", "args": {}}
+
+        intent = intent_data.get("intent", "normal-chat")
+        args = intent_data.get("args", {})
+
+        # Step 2: Route based on intent
+        if intent == "list-assets":
+            assets = asset_controller.list_assets()
+            response = "Here are the available assets:\n" + "\n".join(assets)
+            return jsonify({'response': response})
+        elif intent == "delete-asset":
+            path = args.get('path')
+            if path and asset_controller.delete_asset(path):
+                return jsonify({'response': f"Successfully deleted asset: {path}"})
+            return jsonify({'response': f"Failed to delete asset: {path or '[no path provided]'}"})
+        elif intent == "rename-asset":
+            old_path = args.get('old_path')
+            new_path = args.get('new_path')
+            if old_path and new_path and asset_controller.rename_asset(old_path, new_path):
+                return jsonify({'response': f"Successfully renamed asset from {old_path} to {new_path}"})
+            return jsonify({'response': f"Failed to rename asset from {old_path or '[no old path]'} to {new_path or '[no new path]'}"})
+        elif intent == "download-asset":
+            path = args.get('path')
+            if path:
+                # Return a message with a download link (frontend can handle it)
+                url = f"/api/assets/download?path={path}"
+                return jsonify({'response': f"Click [here]({url}) to download asset: {path}"})
+            return jsonify({'response': 'No asset path provided for download.'})
+        else:
+            # Normal chat
+            model_info = CHAT_MODELS.get(model_name)
+            if not model_info:
+                return jsonify({'error': 'Invalid model name'}), 400
+            system_prompt = get_agent_prompt(model_info['name'])
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ]
+            tokenizer, model, device = get_chat_model(model_name)
+            input_ids = tokenizer.apply_chat_template(messages, return_tensors="pt").to(device)
+            output = model.generate(input_ids, max_new_tokens=256, do_sample=True, temperature=0.7)
+            response = tokenizer.decode(output[0][input_ids.shape[-1]:], skip_special_tokens=True)
+            response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL | re.IGNORECASE)
+            response = re.sub(r'</?think>', '', response, flags=re.IGNORECASE)
+            return jsonify({"response": response.strip()})
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/')
 def index():
@@ -148,17 +249,78 @@ def tts_settings():
         save_user_settings(username, data)
         return jsonify({'success': True})
 
-STORAGE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'storage'))
-
-@app.route('/api/assets/list', methods=['GET'])
-@login_required
+@app.route('/api/assets/list')
 def list_assets():
-    asset_list = []
-    for root, dirs, files in os.walk(STORAGE_DIR):
-        for file in files:
-            rel_path = os.path.relpath(os.path.join(root, file), STORAGE_DIR)
-            asset_list.append(rel_path.replace('\\', '/'))
-    return asset_list
+    try:
+        directory = request.args.get('directory', '')
+        assets = asset_controller.list_assets(directory)
+        return jsonify(assets)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/assets/delete', methods=['POST'])
+def delete_asset():
+    try:
+        data = request.json
+        path = data.get('path')
+        if not path:
+            return jsonify({'error': 'No path provided'}), 400
+            
+        if asset_controller.delete_asset(path):
+            return jsonify({'success': True})
+        return jsonify({'error': 'File not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/assets/rename', methods=['POST'])
+def rename_asset():
+    try:
+        data = request.json
+        old_path = data.get('old_path')
+        new_path = data.get('new_path')
+        
+        if not old_path or not new_path:
+            return jsonify({'error': 'Missing path parameters'}), 400
+            
+        if asset_controller.rename_asset(old_path, new_path):
+            return jsonify({'success': True})
+        return jsonify({'error': 'File not found or rename failed'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/assets/download')
+def download_asset():
+    try:
+        paths = request.args.getlist('path')
+        if not paths:
+            return jsonify({'error': 'No paths provided'}), 400
+            
+        if len(paths) == 1:
+            # Single file download
+            path = paths[0]
+            if not asset_controller.validate_path(path):
+                return jsonify({'error': 'Invalid path'}), 400
+                
+            full_path = os.path.join(STORAGE_PATH, path)
+            if not os.path.exists(full_path):
+                return jsonify({'error': 'File not found'}), 404
+                
+            return send_file(full_path, as_attachment=True)
+        else:
+            # Multiple files - create zip
+            result = asset_controller.create_download_zip(paths)
+            if not result:
+                return jsonify({'error': 'Failed to create zip'}), 500
+                
+            memory_file, size = result
+            return send_file(
+                memory_file,
+                mimetype='application/zip',
+                as_attachment=True,
+                download_name='assets.zip'
+            )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/assets/upload', methods=['POST'])
 @login_required
@@ -168,89 +330,38 @@ def upload_asset():
     file = request.files['file']
     if file.filename == '':
         return 'No selected file', 400
-    save_path = os.path.join(STORAGE_DIR, file.filename)
+    save_path = os.path.join(STORAGE_PATH, file.filename)
     file.save(save_path)
     return 'Uploaded', 200
 
-@app.route('/api/assets/download', methods=['GET'])
-@login_required
-def download_asset():
-    rel_path = request.args.get('path')
-    if not rel_path or '..' in rel_path:
-        return 'Invalid path', 400
-    abs_path = os.path.join(STORAGE_DIR, rel_path)
-    if os.path.exists(abs_path):
-        return send_from_directory(os.path.dirname(abs_path), os.path.basename(abs_path), as_attachment=True)
-    return 'File not found', 404
-
-@app.route('/api/assets/delete', methods=['POST'])
-@login_required
-def delete_asset():
-    data = request.json
-    path = data.get('path')
-    if not path or '..' in path:
-        return 'Invalid path', 400
-    abs_path = os.path.join(STORAGE_DIR, path)
-    if os.path.exists(abs_path):
-        os.remove(abs_path)
-        return 'Deleted', 200
-    return 'File not found', 404
-
-@app.route('/api/assets/rename', methods=['POST'])
-@login_required
-def rename_asset():
-    data = request.json
-    old_path = data.get('old_path')
-    new_path = data.get('new_path')
-    if not old_path or not new_path or '..' in old_path or '..' in new_path:
-        return 'Invalid path', 400
-    abs_old = os.path.join(STORAGE_DIR, old_path)
-    abs_new = os.path.join(STORAGE_DIR, new_path)
-    if os.path.exists(abs_old):
-        os.makedirs(os.path.dirname(abs_new), exist_ok=True)
-        os.rename(abs_old, abs_new)
-        return 'Renamed', 200
-    return 'File not found', 404
-
-@app.route('/api/assets/preview', methods=['GET'])
-@login_required
+@app.route('/api/assets/preview')
 def preview_asset():
-    rel_path = request.args.get('path')
-    if not rel_path or '..' in rel_path:
-        return 'Invalid path', 400
-    abs_path = os.path.join(STORAGE_DIR, rel_path)
-    if not os.path.exists(abs_path):
-        return 'File not found', 404
-    ext = os.path.splitext(abs_path)[1].lower()
-    if ext in ['.png', '.jpg', '.jpeg', '.gif']:
-        return send_from_directory(os.path.dirname(abs_path), os.path.basename(abs_path))
-    elif ext in ['.mp3', '.wav', '.ogg']:
-        return send_from_directory(os.path.dirname(abs_path), os.path.basename(abs_path))
-    elif ext in ['.json', '.moc3', '.model3.json', '.model.json']:
-        with open(abs_path, 'r', encoding='utf-8') as f:
-            content = f.read(2048)  # Only preview first 2KB
-        return jsonify({'type': 'text', 'content': content})
-    else:
-        return jsonify({'type': 'unknown', 'message': 'Preview not supported for this file type.'})
-
-@app.route('/api/assets/download-zip', methods=['POST'])
-@login_required
-def download_assets_zip():
-    data = request.json
-    paths = data.get('paths', [])
-    if not isinstance(paths, list) or not paths:
-        return 'No files specified', 400
-
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w') as zipf:
-        for rel_path in paths:
-            if '..' in rel_path:
-                continue
-            abs_path = os.path.join(STORAGE_DIR, rel_path)
-            if os.path.exists(abs_path):
-                zipf.write(abs_path, arcname=rel_path)
-    zip_buffer.seek(0)
-    return send_file(zip_buffer, mimetype='application/zip', as_attachment=True, download_name='assets.zip')
+    try:
+        path = request.args.get('path')
+        if not path:
+            return jsonify({'error': 'No path provided'}), 400
+            
+        if not asset_controller.validate_path(path):
+            return jsonify({'error': 'Invalid path'}), 400
+            
+        full_path = os.path.join(STORAGE_PATH, path)
+        if not os.path.exists(full_path):
+            return jsonify({'error': 'File not found'}), 404
+            
+        asset_type = asset_controller.get_asset_type(path)
+        
+        if asset_type in ['image', 'audio']:
+            return send_file(full_path)
+        else:
+            # For text-based files, return content
+            try:
+                with open(full_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                return jsonify({'content': content})
+            except Exception:
+                return jsonify({'error': 'Cannot preview file'}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(port=5000, host="0.0.0.0")
+    app.run(debug=True, port=5000)

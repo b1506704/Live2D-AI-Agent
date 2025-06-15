@@ -15,6 +15,40 @@ interface Message {
   time: string; // ISO string
 }
 
+type ChatCommand = {
+  type: 'list-assets';
+  directory?: string;
+} | {
+  type: 'delete-asset' | 'download-asset' | 'preview-asset' | 'switch-model';
+  path: string;
+} | {
+  type: 'rename-asset';
+  oldPath: string;
+  newPath: string;
+} | {
+  type: 'show-models';
+} | {
+  type: 'play-audio';
+  path: string;
+} | {
+  type: 'read-aloud';
+  text: string;
+} | {
+  type: 'reminder';
+  task: string;
+  time: number;
+  unit: string;
+} | {
+  type: 'change-expression';
+  expression: string;
+} | {
+  type: 'animate';
+  motion: string;
+} | {
+  type: 'set-voice-pitch' | 'set-voice-speed';
+  value: number;
+};
+
 const AGENT_INFO = {
   'haru_greeter_t05': {
     name: 'Haru',
@@ -158,7 +192,7 @@ export function App() {
     setAuthenticated(false);
   }
 
-  // Standardize message creation
+  // Helper to create a new message
   function createMessage(sender: 'user' | 'assistant', text: string): Message {
     return {
       sender,
@@ -167,180 +201,8 @@ export function App() {
     };
   }
 
-  // Chat command parsing for model/asset control
-  function parseChatCommand(input: string) {
-    const lower = input.toLowerCase();
-    if (lower.startsWith('switch to ')) {
-      const match = input.match(/switch to (.+)/i);
-      if (match) return { type: 'switch-model', path: match[1].trim() };
-    }
-    if (lower.startsWith('load model ')) {
-      const match = input.match(/load model (.+)/i);
-      if (match) return { type: 'switch-model', path: match[1].trim() };
-    }
-    if (lower.startsWith('show all models')) {
-      return { type: 'show-models' };
-    }
-    if (lower.startsWith('delete asset ')) {
-      const match = input.match(/delete asset (.+)/i);
-      if (match) return { type: 'delete-asset', path: match[1].trim() };
-    }
-    if (lower.startsWith('download asset ')) {
-      const match = input.match(/download asset (.+)/i);
-      if (match) return { type: 'download-asset', path: match[1].trim() };
-    }
-    if (lower.startsWith('play audio ')) {
-      const match = input.match(/play audio (.+)/i);
-      if (match) return { type: 'play-audio', path: match[1].trim() };
-    }
-    if (lower.startsWith('read aloud ')) {
-      const match = input.match(/read aloud (.+)/i);
-      if (match) return { type: 'read-aloud', text: match[1].trim() };
-    }
-    if (lower.startsWith('remind me to ')) {
-      const match = input.match(/remind me to (.+) in (\d+) (minute|minutes|hour|hours)/i);
-      if (match) return { type: 'reminder', task: match[1].trim(), time: parseInt(match[2]), unit: match[3] };
-    }
-    if (lower.startsWith('change expression to ')) {
-      const match = input.match(/change expression to (.+)/i);
-      if (match) return { type: 'change-expression', expression: match[1].trim() };
-    }
-    if (lower.startsWith('animate ') || lower.startsWith('do animation ')) {
-      const match = input.match(/(?:animate|do animation) (.+)/i);
-      if (match) return { type: 'animate', motion: match[1].trim() };
-    }
-    if (lower.startsWith('set voice pitch to ')) {
-      const match = input.match(/set voice pitch to ([\d.]+)/i);
-      if (match) return { type: 'set-voice-pitch', value: parseFloat(match[1]) };
-    }
-    if (lower.startsWith('set voice speed to ')) {
-      const match = input.match(/set voice speed to ([\d.]+)/i);
-      if (match) return { type: 'set-voice-speed', value: parseFloat(match[1]) };
-    }
-    return null;
-  }
-
   async function handleSendChat(input: string) {
-    const cmd = parseChatCommand(input);
-    if (cmd) {
-      if (cmd.type === 'switch-model') {
-        if (cmd.path) setModelPath(cmd.path);
-        setMessages(msgs => [
-          ...msgs,
-          createMessage('user', input),
-          createMessage('assistant', `Switched to model: ${cmd.path}`),
-        ]);
-        return;
-      }
-      if (cmd.type === 'show-models') {
-        setMessages(msgs => [
-          ...msgs,
-          createMessage('user', input),
-          createMessage('assistant', 'Available models:\n' + (Array.isArray((window as any).availableModels) ? (window as any).availableModels.join('\n') : 'Use the Asset tab to see all models.')),
-        ]);
-        return;
-      }
-      if (cmd.type === 'delete-asset') {
-        setMessages(msgs => [
-          ...msgs,
-          createMessage('user', input),
-          createMessage('assistant', `Requested deletion of asset: ${cmd.path}`),
-        ]);
-        return;
-      }
-      if (cmd.type === 'download-asset') {
-        if (cmd.path) window.open(`/api/assets/download?path=${encodeURIComponent(cmd.path)}`);
-        setMessages(msgs => [
-          ...msgs,
-          createMessage('user', input),
-          createMessage('assistant', `Started download for asset: ${cmd.path}`),
-        ]);
-        return;
-      }
-      if (cmd.type === 'play-audio') {
-        if (cmd.path) {
-          const audio = new Audio(`/api/assets/preview?path=${encodeURIComponent(cmd.path)}`);
-          audio.play();
-        }
-        setMessages(msgs => [
-          ...msgs,
-          createMessage('user', input),
-          createMessage('assistant', `Playing audio: ${cmd.path}`),
-        ]);
-        return;
-      }
-      if (cmd.type === 'read-aloud') {
-        if (live2dRef.current && live2dRef.current.playTTSAndAnimate) {
-          live2dRef.current.playTTSAndAnimate(cmd.text, pitch, speed);
-        }
-        setMessages(msgs => [
-          ...msgs,
-          createMessage('user', input),
-          createMessage('assistant', `Reading aloud: ${cmd.text}`),
-        ]);
-        return;
-      }
-      if (cmd.type === 'reminder') {
-        if (cmd.unit && cmd.time) {
-          setTimeout(() => {
-            setMessages(msgs => [
-              ...msgs,
-              createMessage('assistant', `⏰ Reminder: ${cmd.task}`),
-            ]);
-          }, (cmd.unit.startsWith('hour') ? cmd.time * 60 : cmd.time) * 60000);
-        }
-        setMessages(msgs => [
-          ...msgs,
-          createMessage('user', input),
-          createMessage('assistant', `Reminder set for ${cmd.time} ${cmd.unit}: ${cmd.task}`),
-        ]);
-        return;
-      }
-      if (cmd.type === 'change-expression') {
-        if (live2dRef.current && live2dRef.current.setExpression) {
-          live2dRef.current.setExpression(cmd.expression);
-        }
-        setMessages(msgs => [
-          ...msgs,
-          createMessage('user', input),
-          createMessage('assistant', `Changed expression to: ${cmd.expression}`),
-        ]);
-        return;
-      }
-      if (cmd.type === 'animate') {
-        if (live2dRef.current && live2dRef.current.playMotion) {
-          live2dRef.current.playMotion(cmd.motion);
-        }
-        setMessages(msgs => [
-          ...msgs,
-          createMessage('user', input),
-          createMessage('assistant', `Animating: ${cmd.motion}`),
-        ]);
-        return;
-      }
-      if (cmd.type === 'set-voice-pitch') {
-        if (typeof cmd.value === 'number') setPitch(cmd.value);
-        setMessages(msgs => [
-          ...msgs,
-          createMessage('user', input),
-          createMessage('assistant', `Voice pitch set to: ${cmd.value}`),
-        ]);
-        return;
-      }
-      if (cmd.type === 'set-voice-speed') {
-        if (typeof cmd.value === 'number') setSpeed(cmd.value);
-        setMessages(msgs => [
-          ...msgs,
-          createMessage('user', input),
-          createMessage('assistant', `Voice speed set to: ${cmd.value}`),
-        ]);
-        return;
-      }
-    }
-    setMessages(msgs => [
-      ...msgs,
-      createMessage('user', input),
-    ]);
+    setMessages(msgs => [...msgs, createMessage('user', input)]);
     setResponding(true);
     try {
       const res = await fetch('/api/chat', {
@@ -350,11 +212,16 @@ export function App() {
       });
       if (!res.ok) throw new Error('Chat API error');
       const data = await res.json();
-      setMessages(msgs => [
-        ...msgs,
-        createMessage('assistant', data.response),
-      ]);
+      setMessages(msgs => [...msgs, createMessage('assistant', data.response)]);
       await playTTSWithThinking(data.response);
+      // Optionally refresh asset list if the command was asset-related
+      if (
+        input.toLowerCase().startsWith('list assets') ||
+        input.toLowerCase().startsWith('delete asset') ||
+        input.toLowerCase().startsWith('rename asset')
+      ) {
+        await fetchAssets();
+      }
     } catch (e: any) {
       setError(e.message);
       setResponding(false);
@@ -530,20 +397,30 @@ export function App() {
     );
   };
 
-  // Fetch asset list
+  // Fetch assets from backend
   const fetchAssets = useCallback(async () => {
     setRefreshing(true);
     try {
-      const res = await fetch('/api/assets/list', { credentials: 'include' });
+      const res = await fetch('/api/assets/list');
       if (!res.ok) throw new Error('Failed to fetch assets');
-      const list = await res.json();
-      setAssets(list);
+      const assetList = await res.json();
+      setAssets(assetList);
     } catch (e: any) {
-      setError(e.message || 'Error loading assets');
+      setError(e.message);
     } finally {
       setRefreshing(false);
     }
   }, []);
+
+  // Helper function to determine asset type
+  function getAssetType(path: string): 'image' | 'audio' | 'model' | 'motion' | 'other' {
+    const ext = path.toLowerCase().split('.').pop();
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext || '')) return 'image';
+    if (['wav', 'mp3', 'ogg'].includes(ext || '')) return 'audio';
+    if (path.endsWith('.model3.json') || path.endsWith('.model.json')) return 'model';
+    if (path.endsWith('.motion3.json')) return 'motion';
+    return 'other';
+  }
 
   if (!authenticated) {
     return <LoginPage onLogin={handleLogin} error={loginError} />;
