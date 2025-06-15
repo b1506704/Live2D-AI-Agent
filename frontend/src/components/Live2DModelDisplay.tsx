@@ -1,10 +1,9 @@
-import React, {
+import {
   useEffect,
   useRef,
   useImperativeHandle,
   forwardRef,
   useState,
-  Ref,
 } from 'react';
 import * as PIXI from 'pixi.js';
 
