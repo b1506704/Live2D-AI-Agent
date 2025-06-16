@@ -18,6 +18,8 @@ interface ChatBoxProps {
   onSend: (text: string) => void;
   messages: Message[];
   agentKey?: string;
+  thinking?: boolean;
+  agentName?: string;
 }
 
 function formatTime(date: Date) {
@@ -43,11 +45,12 @@ const EMOTES = [
   { code: '⭐', emoji: '⭐' },
 ];
 
-const ChatBox: React.FC<ChatBoxProps> = ({ onSend, messages, agentKey = 'haru_greeter_t05' }) => {
+const ChatBox: React.FC<ChatBoxProps> = ({ onSend, messages, agentKey = 'haru_greeter_t05', thinking = false, agentName = 'Agent' }) => {
   const [input, setInput] = useState('');
   const [showEmotes, setShowEmotes] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const emotePickerRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   function handleSend(e: React.FormEvent) {
     e.preventDefault();
@@ -83,6 +86,13 @@ const ChatBox: React.FC<ChatBoxProps> = ({ onSend, messages, agentKey = 'haru_gr
     }
   }, [showEmotes]);
 
+  // Auto-scroll to latest message
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
+
   // Helper to render asset-list beautifully
   function renderAssetList(assets: AssetItem[]) {
     return (
@@ -105,6 +115,15 @@ const ChatBox: React.FC<ChatBoxProps> = ({ onSend, messages, agentKey = 'haru_gr
             </a>
           </div>
         ))}
+      </div>
+    );
+  }
+
+  function ThinkingIndicator({ name }: { name: string }) {
+    return (
+      <div className="flex items-center gap-2 mt-2 animate-pulse text-fuchsia-600 font-semibold">
+        <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
+        <span>{name} is thinking...</span>
       </div>
     );
   }
@@ -139,28 +158,71 @@ const ChatBox: React.FC<ChatBoxProps> = ({ onSend, messages, agentKey = 'haru_gr
             </div>
           );
         })}
+        {thinking && (
+          <div className="flex justify-start mb-4">
+            <div className="flex items-end">
+              <img
+                src={AGENT_AVATARS[agentKey]}
+                alt="Agent Avatar"
+                className="w-10 h-10 rounded-full mr-2"
+              />
+              <div className="max-w-xs">
+                <div className="p-2 rounded-lg bg-gray-200 text-fuchsia-700">
+                  <ThinkingIndicator name={agentName} />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
       </div>
-      <form onSubmit={handleSend} className="flex p-4 border-t">
-        <input
-          type="text"
-          ref={inputRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          placeholder="Type a message..."
-        />
-        <button
-          type="button"
-          onClick={() => setShowEmotes((prev) => !prev)}
-          className="ml-2 p-2 rounded-lg bg-gray-100 hover:bg-gray-200 focus:outline-none"
-        >
-          {showEmotes ? '😊' : '😀'}
-        </button>
+      {/* Enhanced chat input area */}
+      <form onSubmit={handleSend} className="sticky bottom-0 bg-white/95 p-3 border-t flex items-end z-10 shadow-inner">
+        <div className="flex flex-1 items-end rounded-2xl shadow-lg border border-gray-200 bg-white px-2 py-1 focus-within:ring-2 focus-within:ring-blue-400">
+          {/* Uncomment for future attachment support */}
+          {/* <button type="button" className="p-2 text-gray-400 hover:text-blue-500 focus:outline-none">
+            <PaperClipIcon className="w-5 h-5" />
+          </button> */}
+          <button
+            type="button"
+            onClick={() => setShowEmotes((prev) => !prev)}
+            className="p-2 text-2xl text-gray-400 hover:text-yellow-500 focus:outline-none focus:ring-2 focus:ring-yellow-300 rounded-full transition"
+            tabIndex={-1}
+          >
+            {showEmotes ? '😊' : '😀'}
+          </button>
+          <textarea
+            ref={inputRef as any}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            rows={1}
+            placeholder="Type a message..."
+            className="flex-1 resize-none border-none bg-transparent outline-none px-2 py-2 text-base focus:ring-0 focus:outline-none min-h-[40px] max-h-32"
+            style={{ minHeight: 40, maxHeight: 128 }}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSend(e as any);
+              }
+            }}
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            autoCapitalize="off"
+            name="chat-message-input"
+            form="off"
+            data-form-autocomplete="off"
+            data-lpignore="true"
+          />
+        </div>
         <button
           type="submit"
-          className="ml-2 px-4 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600 focus:outline-none"
+          className="ml-2 p-0 w-12 h-12 rounded-full bg-blue-500 hover:bg-blue-600 text-white flex items-center justify-center shadow-lg transition-all focus:outline-none focus:ring-2 focus:ring-blue-300"
+          aria-label="Send message"
         >
-          Send
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-7 h-7">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 20l7.293-7.293a1 1 0 011.414 0L21 20M5 19V5a2 2 0 012-2h10a2 2 0 012 2v14" />
+          </svg>
         </button>
       </form>
       {showEmotes && (

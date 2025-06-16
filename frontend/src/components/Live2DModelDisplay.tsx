@@ -6,6 +6,7 @@ import {
   useState,
 } from 'react';
 import * as PIXI from 'pixi.js';
+import { Live2DModel } from 'pixi-live2d-display-lipsyncpatch/cubism4';
 
 export interface Live2DModelDisplayHandle {
   playTTSAndAnimate: (
@@ -21,6 +22,10 @@ export interface Live2DModelDisplayHandle {
   ) => Promise<void>;
   setExpression: (expressionName: string) => void;
   playMotion: (motionName: string, priority?: string) => void;
+  speak: (audioUrl: string, expression?: string, onFinish?: () => void, onError?: (err: any) => void) => void;
+  setParameter: (paramId: string, value: number) => void;
+  getParameterValues: (paramIds: string[]) => { [key: string]: number };
+  syncParameters: (paramValues: { [key: string]: number }) => void;
 }
 
 interface Live2DModelDisplayProps {
@@ -36,25 +41,25 @@ const Live2DModelDisplay = forwardRef<Live2DModelDisplayHandle, Live2DModelDispl
     const audioContext = useRef<AudioContext | null>(null);
     const audioAnalyser = useRef<AnalyserNode | null>(null);
     const audioSource = useRef<MediaElementAudioSourceNode | null>(null);
-    const modelLoaded = useRef(false);
+    const [modelLoaded, setModelLoaded] = useState(false);
     const [isMotionPlaying, setIsMotionPlaying] = useState(false);
 
     useEffect(() => {
-      modelLoaded.current = false;
-      if (!modelPath) return;
-      // Remove and re-create canvas to ensure clean state
-      if (canvasRef.current && canvasRef.current.parentElement) {
-        const oldCanvas = canvasRef.current;
-        const parent = oldCanvas.parentElement;
-        if (parent) {
-          const newCanvas = document.createElement('canvas');
-          newCanvas.className = oldCanvas.className;
-          newCanvas.tabIndex = oldCanvas.tabIndex;
-          newCanvas.setAttribute('aria-label', oldCanvas.getAttribute('aria-label') || '');
-          parent.replaceChild(newCanvas, oldCanvas);
-          canvasRef.current = newCanvas;
-        }
+      setModelLoaded(false);
+      if (!modelPath) {
+        console.warn('Live2DModelDisplay: modelPath is missing or invalid:', modelPath);
+        return;
       }
+      if (!canvasRef.current) return;
+
+      // Ensure parent has size before initializing PIXI
+      const parent = canvasRef.current.parentElement;
+      if (!parent || parent.clientWidth === 0 || parent.clientHeight === 0) {
+        // Delay PIXI init until parent is sized
+        requestAnimationFrame(() => setModelLoaded(false));
+        return;
+      }
+      console.log('Live2DModelDisplay: using modelPath', modelPath);
       if (appRef.current) {
         appRef.current.destroy(true, { children: true });
         appRef.current = null;
@@ -63,25 +68,44 @@ const Live2DModelDisplay = forwardRef<Live2DModelDisplayHandle, Live2DModelDispl
         view: canvasRef.current!,
         width: canvasRef.current?.parentElement?.clientWidth || 400,
         height: canvasRef.current?.parentElement?.clientHeight || 600,
-        transparent: true,
-        autoStart: true,
         backgroundAlpha: 0,
+        autoStart: true,
         resizeTo: canvasRef.current?.parentElement || undefined,
       });
       app.stage.interactive = false;
       if (canvasRef.current) canvasRef.current.style.pointerEvents = 'none';
       appRef.current = app;
-      const isCubism4 = modelPath.endsWith('.model3.json');
-      function fitModelToCanvas(model: any) {
+      function fitModelToCanvas(model: any, attempt = 0) {
+        const MAX_ATTEMPTS = 20;
+        const mWidth = model.width || (model.internalModel && model.internalModel.width);
+        const mHeight = model.height || (model.internalModel && model.internalModel.height);
+
+        if (
+          !model ||
+          typeof mWidth !== 'number' ||
+          typeof mHeight !== 'number' ||
+          isNaN(mWidth) ||
+          isNaN(mHeight) ||
+          mWidth === 0 ||
+          mHeight === 0
+        ) {
+          if (attempt < MAX_ATTEMPTS) {
+            console.warn(`fitModelToCanvas: model not ready or has invalid dimensions (attempt ${attempt + 1}/${MAX_ATTEMPTS})`, model, mWidth, mHeight);
+            requestAnimationFrame(() => fitModelToCanvas(model, attempt + 1));
+          } else {
+            console.error('fitModelToCanvas: model still not ready after max attempts', model, mWidth, mHeight);
+          }
+          return;
+        }
         const cWidth = app.screen.width;
         const cHeight = app.screen.height;
-        const mWidth = model.width || (model.internalModel && model.internalModel.width) || 1;
-        const mHeight = model.height || (model.internalModel && model.internalModel.height) || 1;
         const scale = Math.min(cWidth / mWidth, (cHeight / 0.45) / mHeight) * 1.25;
         model.scale.set(scale, scale);
         model.x = cWidth / 2;
         model.y = cHeight * 0.38;
-        model.anchor.set(0.5, 0.15);
+        if (model.anchor && typeof model.anchor.set === 'function') {
+          model.anchor.set(0.5, 0.15);
+        }
       }
       async function applyPoseAndIdle(model: any) {
         const poseUrl = modelPath.replace(/\.model3\.json$/, '.pose3.json');
@@ -103,32 +127,34 @@ const Live2DModelDisplay = forwardRef<Live2DModelDisplayHandle, Live2DModelDispl
           }
         }
       }
-      if (isCubism4) {
-        // @ts-expect-error: TypeScript may not resolve this dynamic import, but it works at runtime
-        import('pixi-live2d-display/cubism4').then(({ Live2DModel }) => {
-          Live2DModel.from(modelPath).then(async (model: any) => {
-            model.interactive = false;
-            modelRef.current = model;
+      // Always use Cubism 4 loader for .model3.json
+      Live2DModel.from(modelPath)
+        .then(async (model: any) => {
+          console.log('Live2DModelDisplay: loaded model object:', model);
+          model.interactive = false;
+          modelRef.current = model;
+          // Only call fitModelToCanvas and proceed if model is valid
+          if (
+            model &&
+            (typeof model.width !== 'undefined' || (model.internalModel && typeof model.internalModel.width !== 'undefined')) &&
+            (typeof model.height !== 'undefined' || (model.internalModel && typeof model.internalModel.height !== 'undefined'))
+          ) {
             fitModelToCanvas(model);
             app.stage.addChild(model);
-            modelLoaded.current = true;
+            setModelLoaded(true);
             app.renderer.on('resize', () => fitModelToCanvas(model));
             await applyPoseAndIdle(model);
-          });
+          } else {
+            console.error('Live2DModelDisplay: Model is invalid, missing width/height:', model);
+            setModelLoaded(false);
+            // Optionally, set an error state and show a message in the UI
+          }
+        })
+        .catch((err: any) => {
+          console.error('Live2DModelDisplay: error loading Live2D model:', err);
+          setModelLoaded(false);
+          // Optionally, set an error state and show a message in the UI
         });
-      } else {
-        import('pixi-live2d-display').then(({ Live2DModel }) => {
-          Live2DModel.from(modelPath).then(async (model: any) => {
-            model.interactive = false;
-            modelRef.current = model;
-            fitModelToCanvas(model);
-            app.stage.addChild(model);
-            modelLoaded.current = true;
-            app.renderer.on('resize', () => fitModelToCanvas(model));
-            await applyPoseAndIdle(model);
-          });
-        });
-      }
       return () => {
         if (appRef.current) {
           appRef.current.destroy(true, { children: true });
@@ -139,7 +165,7 @@ const Live2DModelDisplay = forwardRef<Live2DModelDisplayHandle, Live2DModelDispl
 
     useEffect(() => {
       function handlePointerMove(e: PointerEvent) {
-        if (!modelLoaded.current || !modelRef.current || !canvasRef.current) return;
+        if (!modelLoaded || !modelRef.current || !canvasRef.current) return;
         if (isMotionPlaying) return;
         const rect = canvasRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left;
@@ -162,7 +188,29 @@ const Live2DModelDisplay = forwardRef<Live2DModelDisplayHandle, Live2DModelDispl
       return () => {
         window.removeEventListener('pointermove', handlePointerMove);
       };
-    }, [modelPath, isMotionPlaying]);
+    }, [modelLoaded, isMotionPlaying]);
+
+    useEffect(() => {
+      if (!modelRef.current) return;
+      const model = modelRef.current;
+      const onHit = (hitAreas: string[]) => {
+        if (hitAreas.includes('head')) {
+          if (model.motion) model.motion('surprised');
+        }
+        if (hitAreas.includes('body')) {
+          if (model.motion) model.motion('happy');
+        }
+      };
+      model.on('hit', onHit);
+      return () => { model.off('hit', onHit); };
+    }, [modelRef.current]);
+
+    useEffect(() => {
+      if (!modelLoaded || !modelRef.current || !modelRef.current.internalModel || !modelRef.current.internalModel.coreModel) return;
+      // Get the latest paramValues from props or context (if lifted)
+      // For this file, we assume paramValues is managed in parent and passed via ref methods
+      // We'll expose a syncParameters method on the ref
+    }, [modelLoaded]);
 
     useImperativeHandle(ref, () => ({
       async playTTSAndAnimate(
@@ -186,23 +234,15 @@ const Live2DModelDisplay = forwardRef<Live2DModelDisplayHandle, Live2DModelDispl
           if (!response.ok) throw new Error('TTS failed');
           const blob = await response.blob();
           const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
-          audio.onplay = () => {
-            if (onAudioStart) onAudioStart();
-            startAudioLipSync(audio);
-            triggerExpressiveMotion(text);
-          };
-          audio.onended = () => {
+          // Use speak for advanced lipsync
+          this.speak(url, mood, () => {
             if (onAudioEnd) onAudioEnd();
-            stopLipSync();
-            URL.revokeObjectURL(url);
-          };
-          audio.onerror = (e) => {
-            // eslint-disable-next-line no-console
-            console.error('Audio playback error', e);
-            alert('Audio playback error: The TTS audio could not be played.');
-          };
-          audio.play();
+            // Reset to idle after speak
+            if (modelRef.current && modelRef.current.motion) modelRef.current.motion('Idle');
+          }, (err) => {
+            if (onAudioEnd) onAudioEnd();
+          });
+          if (onAudioStart) onAudioStart();
         } catch (e) {
           if ('speechSynthesis' in window) {
             const utter = new window.SpeechSynthesisUtterance(text);
@@ -217,6 +257,7 @@ const Live2DModelDisplay = forwardRef<Live2DModelDisplayHandle, Live2DModelDispl
             utter.onend = () => {
               if (onAudioEnd) onAudioEnd();
               stopLipSync();
+              if (modelRef.current && modelRef.current.motion) modelRef.current.motion('Idle');
             };
             window.speechSynthesis.speak(utter);
           } else {
@@ -226,12 +267,14 @@ const Live2DModelDisplay = forwardRef<Live2DModelDisplayHandle, Live2DModelDispl
             setTimeout(() => {
               stopLipSync();
               if (onAudioEnd) onAudioEnd();
+              if (modelRef.current && modelRef.current.motion) modelRef.current.motion('Idle');
             }, 2000);
           }
         }
       },
       setExpression(expressionName: string) {
         if (!modelRef.current) return;
+        // No-op if no expressions are loaded
         if (
           modelRef.current.internalModel &&
           modelRef.current.internalModel.motionManager &&
@@ -241,54 +284,73 @@ const Live2DModelDisplay = forwardRef<Live2DModelDisplayHandle, Live2DModelDispl
           if (expressions[expressionName]) {
             modelRef.current.expression = expressions[expressionName];
           }
-        } else if (modelRef.current.expressions && modelRef.current.expressions[expressionName]) {
-          modelRef.current.expression = modelRef.current.expressions[expressionName];
         }
       },
       playMotion(motionName: string, priority = 'NORMAL') {
         if (!modelRef.current) return;
         setIsMotionPlaying(true);
-        if (typeof modelRef.current.motion === 'function') {
-          modelRef.current.motion(motionName, priority);
+        // Find the index of the motion in the default group by file name
+        const motions = modelRef.current.internalModel?.motionManager?._motions?.[''] || [];
+        const idx = motions.findIndex((m: any) =>
+          m.file && m.file.replace(/\.motion3\.json$/, '') === motionName
+        );
+        if (idx !== -1) {
+          modelRef.current.internalModel.motionManager.startMotion('', idx, 2);
           setTimeout(() => setIsMotionPlaying(false), 2000);
           return;
         }
-        if (
-          modelRef.current.internalModel &&
-          modelRef.current.internalModel.motionManager &&
-          modelRef.current.internalModel.motionManager._motions
-        ) {
-          const motions = modelRef.current.internalModel.motionManager._motions;
-          for (const group in motions) {
-            for (let i = 0; i < motions[group].length; i++) {
-              const m = motions[group][i];
-              if (
-                (m.name && m.name.toLowerCase().includes(motionName.toLowerCase())) ||
-                (m.file && m.file.replace(/\..+$/, '').toLowerCase().includes(motionName.toLowerCase()))
-              ) {
-                modelRef.current.internalModel.motionManager.startMotion(group, i, 2);
-                setTimeout(() => setIsMotionPlaying(false), 2000);
-                return;
-              }
-            }
+        setIsMotionPlaying(false);
+      },
+      // Advanced lipsync with speak
+      speak(audioUrl: string, expression?: string, onFinish?: () => void, onError?: (err: any) => void) {
+        if (!modelRef.current) return;
+        // Create audio element for lipsync
+        const audio = new window.Audio(audioUrl);
+        audio.crossOrigin = 'anonymous';
+        // Start lipsync when audio plays
+        audio.addEventListener('play', () => {
+          startAudioLipSync(audio);
+        });
+        // Stop lipsync and call onFinish when audio ends
+        audio.addEventListener('ended', () => {
+          stopLipSync();
+          if (onFinish) onFinish();
+          if (modelRef.current && modelRef.current.motion) modelRef.current.motion('Idle');
+        });
+        // Stop lipsync and call onError if audio errors
+        audio.addEventListener('error', (e) => {
+          stopLipSync();
+          if (onError) onError(e);
+        });
+        // Optionally set expression
+        if (expression && modelRef.current.internalModel && modelRef.current.internalModel.motionManager && modelRef.current.internalModel.motionManager._expressions) {
+          const expressions = modelRef.current.internalModel.motionManager._expressions;
+          if (expressions[expression]) {
+            modelRef.current.expression = expressions[expression];
           }
-          if (motions['']) {
-            for (let i = 0; i < motions[''].length; i++) {
-              const m = motions[''][i];
-              if (
-                (m.name && m.name.toLowerCase().includes(motionName.toLowerCase())) ||
-                (m.file && m.file.replace(/\..+$/, '').toLowerCase().includes(motionName.toLowerCase()))
-              ) {
-                modelRef.current.internalModel.motionManager.startMotion('', i, 2);
-                setTimeout(() => setIsMotionPlaying(false), 2000);
-                return;
-              }
-            }
-          }
-          if (motions[motionName]) {
-            modelRef.current.internalModel.motionManager.startMotion(motionName, 0, 2);
-            setTimeout(() => setIsMotionPlaying(false), 2000);
-          }
+        }
+        audio.play();
+      },
+      setParameter(paramId: string, value: number) {
+        if (!modelRef.current) return;
+        if (modelRef.current.internalModel && modelRef.current.internalModel.coreModel) {
+          modelRef.current.internalModel.coreModel.setParameterValueById(paramId, value);
+        }
+      },
+      getParameterValues(paramIds: string[]) {
+        const result: { [key: string]: number } = {};
+        if (!modelRef.current || !modelRef.current.internalModel || !modelRef.current.internalModel.coreModel) return result;
+        for (const id of paramIds) {
+          try {
+            result[id] = modelRef.current.internalModel.coreModel.getParameterValueById(id);
+          } catch {}
+        }
+        return result;
+      },
+      syncParameters(paramValues: { [key: string]: number }) {
+        if (!modelRef.current || !modelRef.current.internalModel || !modelRef.current.internalModel.coreModel) return;
+        for (const [paramId, value] of Object.entries(paramValues)) {
+          modelRef.current.internalModel.coreModel.setParameterValueById(paramId, value);
         }
       },
     }));

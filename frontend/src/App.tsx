@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import AssetManager from './components/AssetManager';
-import Live2DModelDisplay from './components/Live2DModelDisplay';
-import AgentInfo from './components/AgentInfo';
-import ChatBox from './components/ChatBox';
-import ErrorModal from './components/ErrorModal';
-import LoginPage from './components/LoginPage';
-import OptionsTab from './components/OptionsTab';
-import MotionTab from './components/MotionTab';
+import AssetManager from './components/AssetManager.js';
+import Live2DModelDisplay from './components/Live2DModelDisplay.js';
+import AgentInfo from './components/AgentInfo.js';
+import ChatBox from './components/ChatBox.js';
+import ErrorModal from './components/ErrorModal.js';
+import LoginPage from './components/LoginPage.js';
+import OptionsTab from './components/OptionsTab.js';
+import Sentiment from 'sentiment';
+import ControlPanel from './components/ControlPanel.js';
 
 interface Message {
   sender: 'user' | 'assistant';
@@ -72,7 +73,9 @@ const motions = [
   { name: 'haru_g_m26', displayName: 'Motion 26' },
 ];
 
-export function App() {
+const sentiment = new Sentiment();
+
+function App() {
   const [modelPath, setModelPath] = useState('/assets/haru_pro/haru_greeter_t05.model3.json');
   const [agentKey, setAgentKey] = useState('haru_greeter_t05');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -105,6 +108,9 @@ export function App() {
   const [assets, setAssets] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
+  // Persist parameter values for ControlPanel
+  const [paramValues, setParamValues] = useState<{ [key: string]: number }>({});
+  const [emotionScore, setEmotionScore] = useState(0);
 
   // Helper to play TTS and manage thinking indicator
   const playTTSWithThinking = async (text: string) => {
@@ -180,6 +186,7 @@ export function App() {
       if (!res.ok) throw new Error('Chat API error');
       const data = await res.json();
 
+      let responseText = '';
       if (data.type === 'asset-list') {
         setMessages(msgs => [
           ...msgs,
@@ -190,14 +197,37 @@ export function App() {
             time: new Date().toISOString(),
           }
         ]);
-        await playTTSWithThinking('Here are your assets.');
+        responseText = 'Here are your assets.';
+        await playTTSWithThinking(responseText);
       } else {
         setMessages(msgs => [
           ...msgs,
           createMessage('assistant', data.response)
         ]);
-        await playTTSWithThinking(data.response || '');
+        responseText = data.response || '';
+        await playTTSWithThinking(responseText);
       }
+
+      // --- Sentiment-based animation trigger ---
+      if (live2dRef.current) {
+        const result = sentiment.analyze(responseText);
+        setEmotionScore(result.score);
+        if (result.score > 1) {
+          // Positive: happy motion/expression
+          if (live2dRef.current.playMotion) live2dRef.current.playMotion('haru_g_m01');
+          if (live2dRef.current.setExpression) live2dRef.current.setExpression('happy');
+        } else if (result.score < -1) {
+          // Negative: sad motion/expression
+          if (live2dRef.current.playMotion) live2dRef.current.playMotion('haru_g_m02');
+          if (live2dRef.current.setExpression) live2dRef.current.setExpression('sad');
+        } else {
+          // Neutral: idle/normal
+          if (live2dRef.current.playMotion) live2dRef.current.playMotion('haru_g_idle');
+          if (live2dRef.current.setExpression) live2dRef.current.setExpression('normal');
+        }
+      }
+      // --- End sentiment-based animation trigger ---
+
       // Optionally refresh asset list if the command was asset-related
       if (
         input.toLowerCase().startsWith('list assets') ||
@@ -206,8 +236,12 @@ export function App() {
       ) {
         await fetchAssets();
       }
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      if (typeof e === 'object' && e !== null && 'message' in e && typeof (e as any).message === 'string') {
+        setError((e as any).message);
+      } else {
+        setError('Unknown error');
+      }
       setResponding(false);
     }
   }
@@ -234,7 +268,7 @@ export function App() {
   }, [authenticated, activeTab]);
 
   // Add save handler for Option tab
-  async function handleSaveTTSOptions(newSettings: any) {
+  async function handleSaveTTSOptions(newSettings: Record<string, any>) {
     await fetch('/api/settings/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -246,16 +280,6 @@ export function App() {
     setVoice(newSettings.voice);
     setGender(newSettings.gender);
     setMood(newSettings.mood);
-  }
-
-  // Animated thinking indicator
-  function ThinkingIndicator() {
-    return (
-      <div className="flex items-center gap-2 mt-2 animate-pulse text-fuchsia-600 font-semibold">
-        <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
-        <span>Agent is thinking...</span>
-      </div>
-    );
   }
 
   // Staging logic for persistent files
@@ -304,7 +328,7 @@ export function App() {
       setUploadProgress({ current: 0, total: 0 });
       setFileUploadProgress([]);
       await fetchAssets();
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Optionally handle error
       setUploadProgress({ current: 0, total: 0 });
       setFileUploadProgress([]);
@@ -344,8 +368,12 @@ export function App() {
           }
           setSelected(new Set());
           await fetchAssets();
-        } catch (e: any) {
-          setError(e.message || 'Delete error');
+        } catch (e: unknown) {
+          if (typeof e === 'object' && e !== null && 'message' in e && typeof (e as any).message === 'string') {
+            setError((e as any).message || 'Delete error');
+          } else {
+            setError('Delete error');
+          }
         } finally {
           setDeleteProgress({ current: 0, total: 0 });
           setFileDeleteProgress([]);
@@ -389,22 +417,16 @@ export function App() {
       if (!res.ok) throw new Error('Failed to fetch assets');
       const assetList = await res.json();
       setAssets(assetList);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      if (typeof e === 'object' && e !== null && 'message' in e && typeof (e as any).message === 'string') {
+        setError((e as any).message);
+      } else {
+        setError('Unknown error');
+      }
     } finally {
       setRefreshing(false);
     }
   }, []);
-
-  // Helper function to determine asset type
-  function getAssetType(path: string): 'image' | 'audio' | 'model' | 'motion' | 'other' {
-    const ext = path.toLowerCase().split('.').pop();
-    if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext || '')) return 'image';
-    if (['wav', 'mp3', 'ogg'].includes(ext || '')) return 'audio';
-    if (path.endsWith('.model3.json') || path.endsWith('.model.json')) return 'model';
-    if (path.endsWith('.motion3.json')) return 'motion';
-    return 'other';
-  }
 
   if (!authenticated) {
     return <LoginPage onLogin={handleLogin} error={loginError} />;
@@ -441,10 +463,10 @@ export function App() {
             Option
           </button>
           <button
-            className={`tab-btn tab-button px-3 sm:px-6 py-2 font-bold rounded-full transition-all duration-200 neon-black ml-2 ${activeTab === 'motion' ? 'bg-blue-700 shadow ring-2 ring-blue-400/40 text-white' : 'bg-white border border-blue-200 hover:bg-blue-50 hover:text-blue-800'}`}
-            onClick={() => setActiveTab('motion')}
+            className={`tab-btn tab-button px-3 sm:px-6 py-2 font-bold rounded-full transition-all duration-200 neon-black ml-2 ${activeTab === 'control' ? 'bg-orange-600 shadow ring-2 ring-orange-400/40 text-white' : 'bg-white border border-orange-200 hover:bg-orange-50 hover:text-orange-800'}`}
+            onClick={() => setActiveTab('control')}
           >
-            Motion
+            Control
           </button>
           <button onClick={handleLogout} className="ml-auto flex items-center gap-1 px-2 sm:px-3 py-1 bg-gray-200 hover:bg-fuchsia-600 hover:text-white text-fuchsia-700 rounded-lg font-semibold transition text-xs sm:text-base">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h4a2 2 0 012 2v1" /></svg>
@@ -474,8 +496,9 @@ export function App() {
                   assets: m.assets,
                 }))}
                 agentKey={agentKey}
+                thinking={responding}
+                agentName={(AGENT_INFO[agentKey as keyof typeof AGENT_INFO]?.name) || 'Agent'}
               />
-              {responding && <ThinkingIndicator />}
             </>
           )}
           {activeTab === 'assets' && (
@@ -519,10 +542,15 @@ export function App() {
               onSave={handleSaveTTSOptions}
             />
           )}
-          {activeTab === 'motion' && (
-            <MotionTab
+          {activeTab === 'control' && (
+            <ControlPanel
+              live2dRef={live2dRef}
               motions={motions}
-              onPlay={motionName => live2dRef.current && live2dRef.current.playMotion && live2dRef.current.playMotion(motionName)}
+              sentiment={sentiment}
+              lastAssistantMessage={messages.filter(m => m.sender === 'assistant').slice(-1)[0]?.text || ''}
+              paramValues={paramValues}
+              setParamValues={setParamValues}
+              emotionScore={emotionScore}
             />
           )}
           <ErrorModal message={error} onClose={() => setError('')} />

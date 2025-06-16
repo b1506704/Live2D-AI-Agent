@@ -29,3 +29,4 @@ dist-ssr
 models
 storage
 dist
+frontend/public/assets/user_settings/demo.json
