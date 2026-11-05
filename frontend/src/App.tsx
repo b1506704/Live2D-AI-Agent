@@ -437,7 +437,7 @@ function App() {
       {/* Left: Live2D Model Canvas */}
       <div className="flex-1 flex items-center justify-center bg-black h-80 md:h-full min-h-0">
         <div className="w-full h-full flex items-center justify-center max-w-full max-h-full">
-          <Live2DModelDisplay ref={live2dRef} modelPath={modelPath} />
+          <Live2DModelDisplay ref={live2dRef} modelPath={modelPath} emotionScore={emotionScore} />
         </div>
       </div>
       {/* Right: Tab menu, chat, and controls */}

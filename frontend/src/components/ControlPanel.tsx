@@ -50,17 +50,6 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ live2dRef, motions, sentime
     return () => cancelAnimationFrame(frameId);
   }, [live2dRef]);
 
-  useEffect(() => {
-    if (!live2dRef.current || typeof live2dRef.current.setParameter !== 'function') return;
-    // Map emotionScore to brow values: positive = raised, negative = lowered, neutral = middle
-    // Clamp emotionScore to [-5, 5] for mapping
-    const clamped = Math.max(-5, Math.min(5, emotionScore));
-    // Map: -5 => -1 (very negative, brows down), 0 => 0 (neutral), 5 => 1 (very positive, brows up)
-    const browValue = clamped / 5;
-    live2dRef.current.setParameter('ParamBrowLY', browValue);
-    live2dRef.current.setParameter('ParamBrowRY', browValue);
-  }, [emotionScore, live2dRef]);
-
   const handleParamChange = (id: string, value: number) => {
     setParamValues(v => ({ ...v, [id]: value }));
     if (live2dRef.current && live2dRef.current.setParameter) {

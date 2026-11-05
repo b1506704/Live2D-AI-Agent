@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "node --test tests/*.test.cjs",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -21,6 +22,7 @@
     "@types/react-dom": "^18.3.7",
     "@types/sentiment": "^5.0.4",
     "@vitejs/plugin-react": "^4.1.0",
+    "react-test-renderer": "^18.3.1",
     "typescript": "^5.8.3",
     "vite": "^4.3.9"
   }

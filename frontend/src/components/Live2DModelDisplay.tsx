@@ -30,19 +30,35 @@ export interface Live2DModelDisplayHandle {
 
 interface Live2DModelDisplayProps {
   modelPath: string;
+  emotionScore: number;
 }
 
 const Live2DModelDisplay = forwardRef<Live2DModelDisplayHandle, Live2DModelDisplayProps>(
-  ({ modelPath }, ref) => {
+  ({ modelPath, emotionScore }, ref) => {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const appRef = useRef<PIXI.Application | null>(null);
     const modelRef = useRef<any>(null);
+    const emotionScoreRef = useRef(emotionScore);
     const mouthInterval = useRef<number | null>(null);
     const audioContext = useRef<AudioContext | null>(null);
     const audioAnalyser = useRef<AnalyserNode | null>(null);
     const audioSource = useRef<MediaElementAudioSourceNode | null>(null);
     const [modelLoaded, setModelLoaded] = useState(false);
     const [isMotionPlaying, setIsMotionPlaying] = useState(false);
+
+    function syncEmotionBrows(model: any, score: number) {
+      const coreModel = model?.internalModel?.coreModel;
+      if (!coreModel) return;
+      // Map [-5, 5] sentiment to [-1, 1] brow height.
+      const browValue = Math.max(-5, Math.min(5, score)) / 5;
+      coreModel.setParameterValueById('ParamBrowLY', browValue);
+      coreModel.setParameterValueById('ParamBrowRY', browValue);
+    }
+
+    useEffect(() => {
+      emotionScoreRef.current = emotionScore;
+      syncEmotionBrows(modelRef.current, emotionScore);
+    }, [emotionScore]);
 
     useEffect(() => {
       setModelLoaded(false);
@@ -127,12 +143,19 @@ const Live2DModelDisplay = forwardRef<Live2DModelDisplayHandle, Live2DModelDispl
           }
         }
       }
+      let cancelled = false;
       // Always use Cubism 4 loader for .model3.json
       Live2DModel.from(modelPath)
         .then(async (model: any) => {
+          if (cancelled) {
+            model.destroy();
+            return;
+          }
           console.log('Live2DModelDisplay: loaded model object:', model);
           model.interactive = false;
           modelRef.current = model;
+          // Loading can finish after the emotion changes, or replace an existing model.
+          syncEmotionBrows(model, emotionScoreRef.current);
           // Only call fitModelToCanvas and proceed if model is valid
           if (
             model &&
@@ -151,11 +174,14 @@ const Live2DModelDisplay = forwardRef<Live2DModelDisplayHandle, Live2DModelDispl
           }
         })
         .catch((err: any) => {
+          if (cancelled) return;
           console.error('Live2DModelDisplay: error loading Live2D model:', err);
           setModelLoaded(false);
           // Optionally, set an error state and show a message in the UI
         });
       return () => {
+        cancelled = true;
+        modelRef.current = null;
         if (appRef.current) {
           appRef.current.destroy(true, { children: true });
           appRef.current = null;
