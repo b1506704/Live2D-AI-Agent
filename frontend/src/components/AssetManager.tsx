@@ -229,10 +229,10 @@ const AssetManager: React.FC<AssetManagerProps> = ({
       setZipDownloading(true);
       setZipDownloadError('');
       try {
-        const response = await fetch('/api/assets/download-zip', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ paths: toDownload }),
+        const query = new URLSearchParams();
+        for (const path of toDownload) query.append('path', path);
+        const response = await fetch(`/api/assets/download?${query.toString()}`, {
+          method: 'GET',
           credentials: 'include',
         });
         if (!response.ok || !response.body) {
